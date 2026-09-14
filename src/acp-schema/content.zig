@@ -92,20 +92,12 @@ pub const ResourceContents = union(enum) {
         }
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !ResourceContents {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !ResourceContents {
         const v = try std.json.innerParse(std.json.Value, allocator, source, options);
         return jsonParseFromValue(allocator, v, options);
     }
 
-    pub fn jsonParseFromValue(
-        allocator: std.mem.Allocator,
-        source: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !ResourceContents {
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !ResourceContents {
         if (source != .object) return error.UnexpectedToken;
         if (source.object.get("text") != null) {
             return .{ .text = try std.json.parseFromValueLeaky(TextResource, allocator, source, options) };
@@ -153,20 +145,12 @@ pub const ContentBlock = union(enum) {
         try jw.endObject();
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !ContentBlock {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !ContentBlock {
         const v = try std.json.innerParse(std.json.Value, allocator, source, options);
         return jsonParseFromValue(allocator, v, options);
     }
 
-    pub fn jsonParseFromValue(
-        allocator: std.mem.Allocator,
-        source: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !ContentBlock {
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !ContentBlock {
         if (source != .object) return error.UnexpectedToken;
         const tag_v = source.object.get("type") orelse return error.MissingField;
         if (tag_v != .string) return error.UnexpectedToken;

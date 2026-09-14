@@ -17,11 +17,7 @@ const impl = struct {
             try jw.write(@tagName(self));
         }
 
-        pub fn jsonParse(
-            allocator: std.mem.Allocator,
-            source: anytype,
-            options: std.json.ParseOptions,
-        ) !ElicitationAction {
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !ElicitationAction {
             const tok = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
             defer freeToken(allocator, tok);
             const slice = switch (tok) {
@@ -31,11 +27,7 @@ const impl = struct {
             return std.meta.stringToEnum(ElicitationAction, slice) orelse error.InvalidEnumTag;
         }
 
-        pub fn jsonParseFromValue(
-            _: std.mem.Allocator,
-            source: std.json.Value,
-            _: std.json.ParseOptions,
-        ) !ElicitationAction {
+        pub fn jsonParseFromValue(_: std.mem.Allocator, source: std.json.Value, _: std.json.ParseOptions) !ElicitationAction {
             if (source != .string) return error.UnexpectedToken;
             return std.meta.stringToEnum(ElicitationAction, source.string) orelse error.InvalidEnumTag;
         }

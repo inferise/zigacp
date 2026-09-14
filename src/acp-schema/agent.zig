@@ -85,11 +85,7 @@ pub const SessionId = struct {
         try jw.write(self.value);
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !SessionId {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !SessionId {
         const tok = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
         const slice = switch (tok) {
             .string => |s| try allocator.dupe(u8, s),
@@ -99,11 +95,7 @@ pub const SessionId = struct {
         return .{ .value = slice };
     }
 
-    pub fn jsonParseFromValue(
-        allocator: std.mem.Allocator,
-        source: std.json.Value,
-        _: std.json.ParseOptions,
-    ) !SessionId {
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, _: std.json.ParseOptions) !SessionId {
         if (source != .string) return error.UnexpectedToken;
         return .{ .value = try allocator.dupe(u8, source.string) };
     }
@@ -166,11 +158,7 @@ pub const StopReason = enum {
         try jw.write(@tagName(self));
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !StopReason {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !StopReason {
         const tok = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
         defer freeToken(allocator, tok);
         const slice = switch (tok) {
@@ -180,11 +168,7 @@ pub const StopReason = enum {
         return std.meta.stringToEnum(StopReason, slice) orelse error.InvalidEnumTag;
     }
 
-    pub fn jsonParseFromValue(
-        _: std.mem.Allocator,
-        source: std.json.Value,
-        _: std.json.ParseOptions,
-    ) !StopReason {
+    pub fn jsonParseFromValue(_: std.mem.Allocator, source: std.json.Value, _: std.json.ParseOptions) !StopReason {
         if (source != .string) return error.UnexpectedToken;
         return std.meta.stringToEnum(StopReason, source.string) orelse error.InvalidEnumTag;
     }
@@ -300,20 +284,12 @@ pub const SessionUpdate = union(enum) {
         try jw.endObject();
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !SessionUpdate {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !SessionUpdate {
         const v = try std.json.innerParse(std.json.Value, allocator, source, options);
         return jsonParseFromValue(allocator, v, options);
     }
 
-    pub fn jsonParseFromValue(
-        allocator: std.mem.Allocator,
-        source: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !SessionUpdate {
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !SessionUpdate {
         if (source != .object) return error.UnexpectedToken;
         const tag_v = source.object.get("sessionUpdate") orelse return error.MissingField;
         if (tag_v != .string) return error.UnexpectedToken;

@@ -27,13 +27,7 @@ pub const FileTransport = struct {
     framer: Framer,
     closed: bool = false,
 
-    pub fn init(
-        allocator: std.mem.Allocator,
-        io: std.Io,
-        reader: std.Io.File,
-        writer: std.Io.File,
-        own_handles: bool,
-    ) FileTransport {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, reader: std.Io.File, writer: std.Io.File, own_handles: bool) FileTransport {
         return .{
             .allocator = allocator,
             .io = io,

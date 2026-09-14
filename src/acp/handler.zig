@@ -13,20 +13,10 @@ pub const RequestHandler = struct {
     vtable: *const VTable,
 
     pub const VTable = struct {
-        handle: *const fn (
-            ctx: *anyopaque,
-            allocator: std.mem.Allocator,
-            method: []const u8,
-            params: std.json.Value,
-        ) AcpError!std.json.Value,
+        handle: *const fn (ctx: *anyopaque, allocator: std.mem.Allocator, method: []const u8, params: std.json.Value) AcpError!std.json.Value,
     };
 
-    pub fn handle(
-        self: RequestHandler,
-        allocator: std.mem.Allocator,
-        method: []const u8,
-        params: std.json.Value,
-    ) AcpError!std.json.Value {
+    pub fn handle(self: RequestHandler, allocator: std.mem.Allocator, method: []const u8, params: std.json.Value) AcpError!std.json.Value {
         return self.vtable.handle(self.ptr, allocator, method, params);
     }
 };
@@ -36,20 +26,10 @@ pub const NotificationHandler = struct {
     vtable: *const VTable,
 
     pub const VTable = struct {
-        handle: *const fn (
-            ctx: *anyopaque,
-            allocator: std.mem.Allocator,
-            method: []const u8,
-            params: std.json.Value,
-        ) AcpError!void,
+        handle: *const fn (ctx: *anyopaque, allocator: std.mem.Allocator, method: []const u8, params: std.json.Value) AcpError!void,
     };
 
-    pub fn handle(
-        self: NotificationHandler,
-        allocator: std.mem.Allocator,
-        method: []const u8,
-        params: std.json.Value,
-    ) AcpError!void {
+    pub fn handle(self: NotificationHandler, allocator: std.mem.Allocator, method: []const u8, params: std.json.Value) AcpError!void {
         return self.vtable.handle(self.ptr, allocator, method, params);
     }
 };
@@ -64,12 +44,7 @@ const Recorder = struct {
         params_kind: std.meta.Tag(std.json.Value),
     };
 
-    fn handleReq(
-        ctx: *anyopaque,
-        allocator: std.mem.Allocator,
-        method: []const u8,
-        params: std.json.Value,
-    ) AcpError!std.json.Value {
+    fn handleReq(ctx: *anyopaque, allocator: std.mem.Allocator, method: []const u8, params: std.json.Value) AcpError!std.json.Value {
         const self: *Recorder = @ptrCast(@alignCast(ctx));
         self.calls.append(self.allocator, .{
             .method = self.allocator.dupe(u8, method) catch return error.OutOfMemory,
@@ -79,12 +54,7 @@ const Recorder = struct {
         return .{ .bool = true };
     }
 
-    fn handleNotif(
-        ctx: *anyopaque,
-        allocator: std.mem.Allocator,
-        method: []const u8,
-        params: std.json.Value,
-    ) AcpError!void {
+    fn handleNotif(ctx: *anyopaque, allocator: std.mem.Allocator, method: []const u8, params: std.json.Value) AcpError!void {
         _ = allocator;
         const self: *Recorder = @ptrCast(@alignCast(ctx));
         self.calls.append(self.allocator, .{

@@ -6,7 +6,6 @@
 //! for diagnostics.
 
 const std = @import("std");
-const acp = @import("acp");
 const FileTransport = @import("file_transport.zig").FileTransport;
 
 const log = std.log.scoped(.acp_child);
@@ -43,6 +42,8 @@ pub const Child = struct {
 
         const stdin = process.stdin orelse return error.NoStdin;
         const stdout = process.stdout orelse return error.NoStdout;
+
+        if (opts.argv.len > 0) log.debug("spawned agent: {s}", .{opts.argv[0]});
 
         return .{
             .io = io,

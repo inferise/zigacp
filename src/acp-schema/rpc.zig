@@ -25,11 +25,7 @@ pub const RequestId = union(enum) {
         }
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !RequestId {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !RequestId {
         const token = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
         switch (token) {
             .number, .allocated_number => |slice| {
@@ -48,11 +44,7 @@ pub const RequestId = union(enum) {
         }
     }
 
-    pub fn jsonParseFromValue(
-        allocator: std.mem.Allocator,
-        source: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !RequestId {
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !RequestId {
         _ = options;
         switch (source) {
             .integer => |i| return .{ .integer = i },
@@ -115,20 +107,12 @@ pub const Response = struct {
         try jw.endObject();
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !Response {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Response {
         const v = try std.json.innerParse(std.json.Value, allocator, source, options);
         return jsonParseFromValue(allocator, v, options);
     }
 
-    pub fn jsonParseFromValue(
-        allocator: std.mem.Allocator,
-        source: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !Response {
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Response {
         if (source != .object) return error.UnexpectedToken;
         const obj = source.object;
 

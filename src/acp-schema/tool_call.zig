@@ -17,11 +17,7 @@ pub const ToolCallId = struct {
         try jw.write(self.value);
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !ToolCallId {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !ToolCallId {
         const tok = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
         const slice = switch (tok) {
             .string => |s| try allocator.dupe(u8, s),
@@ -31,11 +27,7 @@ pub const ToolCallId = struct {
         return .{ .value = slice };
     }
 
-    pub fn jsonParseFromValue(
-        allocator: std.mem.Allocator,
-        source: std.json.Value,
-        _: std.json.ParseOptions,
-    ) !ToolCallId {
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, _: std.json.ParseOptions) !ToolCallId {
         if (source != .string) return error.UnexpectedToken;
         return .{ .value = try allocator.dupe(u8, source.string) };
     }
@@ -52,11 +44,7 @@ pub const ToolCallStatus = enum {
         try jw.write(@tagName(self));
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !ToolCallStatus {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !ToolCallStatus {
         const tok = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
         defer freeToken(allocator, tok);
         const slice = switch (tok) {
@@ -66,11 +54,7 @@ pub const ToolCallStatus = enum {
         return std.meta.stringToEnum(ToolCallStatus, slice) orelse error.InvalidEnumTag;
     }
 
-    pub fn jsonParseFromValue(
-        _: std.mem.Allocator,
-        source: std.json.Value,
-        _: std.json.ParseOptions,
-    ) !ToolCallStatus {
+    pub fn jsonParseFromValue(_: std.mem.Allocator, source: std.json.Value, _: std.json.ParseOptions) !ToolCallStatus {
         if (source != .string) return error.UnexpectedToken;
         return std.meta.stringToEnum(ToolCallStatus, source.string) orelse error.InvalidEnumTag;
     }
@@ -92,11 +76,7 @@ pub const ToolKind = enum {
         try jw.write(@tagName(self));
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !ToolKind {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !ToolKind {
         const tok = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
         defer freeToken(allocator, tok);
         const slice = switch (tok) {
@@ -106,11 +86,7 @@ pub const ToolKind = enum {
         return std.meta.stringToEnum(ToolKind, slice) orelse .other;
     }
 
-    pub fn jsonParseFromValue(
-        _: std.mem.Allocator,
-        source: std.json.Value,
-        _: std.json.ParseOptions,
-    ) !ToolKind {
+    pub fn jsonParseFromValue(_: std.mem.Allocator, source: std.json.Value, _: std.json.ParseOptions) !ToolKind {
         if (source != .string) return error.UnexpectedToken;
         return std.meta.stringToEnum(ToolKind, source.string) orelse .other;
     }
@@ -164,20 +140,12 @@ pub const ToolCallContent = union(enum) {
         }
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !ToolCallContent {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !ToolCallContent {
         const v = try std.json.innerParse(std.json.Value, allocator, source, options);
         return jsonParseFromValue(allocator, v, options);
     }
 
-    pub fn jsonParseFromValue(
-        allocator: std.mem.Allocator,
-        source: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !ToolCallContent {
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !ToolCallContent {
         if (source != .object) return error.UnexpectedToken;
         const tag_v = source.object.get("type") orelse return error.MissingField;
         if (tag_v != .string) return error.UnexpectedToken;

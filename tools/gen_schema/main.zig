@@ -48,6 +48,7 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     if (out_path) |p| {
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = p, .data = bytes });
+        log.info("wrote schema catalog to {s} ({d} bytes)", .{ p, bytes.len });
     } else {
         try std.Io.File.stdout().writeStreamingAll(io, bytes);
     }

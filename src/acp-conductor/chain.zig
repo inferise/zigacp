@@ -46,13 +46,7 @@ pub const Chain = struct {
 
     /// Walk the chain forward. Returns the outcome of the final link, or
     /// the first short-circuit / failure encountered.
-    pub fn dispatchRequest(
-        self: *Chain,
-        direction: Direction,
-        method: []const u8,
-        params: std.json.Value,
-        allocator: std.mem.Allocator,
-    ) AcpError!RequestOutcome {
+    pub fn dispatchRequest(self: *Chain, direction: Direction, method: []const u8, params: std.json.Value, allocator: std.mem.Allocator) AcpError!RequestOutcome {
         var current = params;
         for (self.request_links.items) |link| {
             const outcome = try link.onRequest(.{
@@ -69,13 +63,7 @@ pub const Chain = struct {
         return .{ .pass = current };
     }
 
-    pub fn dispatchNotification(
-        self: *Chain,
-        direction: Direction,
-        method: []const u8,
-        params: std.json.Value,
-        allocator: std.mem.Allocator,
-    ) AcpError!NotificationOutcome {
+    pub fn dispatchNotification(self: *Chain, direction: Direction, method: []const u8, params: std.json.Value, allocator: std.mem.Allocator) AcpError!NotificationOutcome {
         var current = params;
         for (self.notification_links.items) |link| {
             const outcome = try link.onNotification(.{

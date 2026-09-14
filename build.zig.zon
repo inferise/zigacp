@@ -1,17 +1,23 @@
 .{
-    .name = .acp,
-    .version = "0.1.0",
-    .fingerprint = 0xa881315d23dae66c,
+    .name = .zigacp,
+    .description = "Inferise Zig ACP Module",
+    .version = "1.0.0",
+    .fingerprint = 0x7e68bdcdb9528453,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
-        .vaxis = .{
-            .url = "git+https://github.com/rockorager/libvaxis#7111c3045f156377001e2ff9e68ffdda53e0a1ae",
-            .hash = "vaxis-0.6.0-BWNV_D7TCQBMZVGajzuGrcl8YvhLpOF7D_qHWWSeOPeR",
+        .zigvaxis_local = .{
+            .path = "../zigvaxis",
+            .lazy = true,
+        },
+        .zigvaxis = .{
+            .url = "git+https://github.com/inferise/zigvaxis#f37c42a3b324131c131d066767968e1f5b976453",
+            .hash = "vaxis-0.6.0-BWNV_AIQDADLTDo5jCn27pBWJBvi-sTrSkSKwITQWgUV",
             .lazy = true,
         },
     },
     .paths = .{
         "build.zig",
+        "build.deps.zig",
         "build.zig.zon",
         "src",
         "tools",

@@ -17,11 +17,7 @@ pub const Negotiated = struct {
     load_session: bool,
 };
 
-pub fn negotiate(
-    client: schema.agent.ClientCapabilities,
-    agent: schema.agent.AgentCapabilities,
-    version: schema.ProtocolVersion,
-) Negotiated {
+pub fn negotiate(client: schema.agent.ClientCapabilities, agent: schema.agent.AgentCapabilities, version: schema.ProtocolVersion) Negotiated {
     const fs = client.fs orelse schema.agent.ClientCapabilities.FsCapabilities{};
     const prompt = agent.promptCapabilities orelse schema.agent.AgentCapabilities.PromptCapabilities{};
     return .{

@@ -28,10 +28,7 @@ pub const Transport = struct {
 
         /// Read the next frame. Allocator is used for the returned slice.
         /// Returns `error.TransportClosed` on clean EOF.
-        read_frame: *const fn (
-            ctx: *anyopaque,
-            allocator: std.mem.Allocator,
-        ) AcpError![]u8,
+        read_frame: *const fn (ctx: *anyopaque, allocator: std.mem.Allocator) AcpError![]u8,
 
         /// Release any internal resources.
         close: *const fn (ctx: *anyopaque) void,

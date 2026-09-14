@@ -16,12 +16,7 @@ const Agent = struct {
     seen_prompt: bool = false,
     seen_cancel: bool = false,
 
-    fn handleRequest(
-        ctx: *anyopaque,
-        allocator: std.mem.Allocator,
-        method: []const u8,
-        params: std.json.Value,
-    ) acp.AcpError!std.json.Value {
+    fn handleRequest(ctx: *anyopaque, allocator: std.mem.Allocator, method: []const u8, params: std.json.Value) acp.AcpError!std.json.Value {
         _ = params;
         const self: *Agent = @ptrCast(@alignCast(ctx));
 
@@ -40,12 +35,7 @@ const Agent = struct {
         return error.MethodNotFound;
     }
 
-    fn handleNotification(
-        ctx: *anyopaque,
-        _: std.mem.Allocator,
-        method: []const u8,
-        _: std.json.Value,
-    ) acp.AcpError!void {
+    fn handleNotification(ctx: *anyopaque, _: std.mem.Allocator, method: []const u8, _: std.json.Value) acp.AcpError!void {
         const self: *Agent = @ptrCast(@alignCast(ctx));
         if (std.mem.eql(u8, method, schema.agent.method_session_cancel)) {
             self.seen_cancel = true;
@@ -87,13 +77,7 @@ fn clone(allocator: std.mem.Allocator, v: std.json.Value) !std.json.Value {
 }
 
 /// Synchronously do one client request → agent response round-trip.
-fn requestRoundTrip(
-    comptime ResultT: type,
-    client_conn: *acp.Connection,
-    agent_conn: *acp.Connection,
-    method: []const u8,
-    params: anytype,
-) !std.json.Parsed(ResultT) {
+fn requestRoundTrip(comptime ResultT: type, client_conn: *acp.Connection, agent_conn: *acp.Connection, method: []const u8, params: anytype) !std.json.Parsed(ResultT) {
     // Step 1: client writes its request frame to the pipe.
     {
         var buf: std.Io.Writer.Allocating = .init(client_conn.allocator);

@@ -31,11 +31,7 @@ pub const Session = struct {
     /// Per-session arena. The owner deinits it on close.
     arena: std.heap.ArenaAllocator,
 
-    pub fn init(
-        gpa: std.mem.Allocator,
-        id: schema.agent.SessionId,
-        cwd: []const u8,
-    ) !Session {
+    pub fn init(gpa: std.mem.Allocator, id: schema.agent.SessionId, cwd: []const u8) !Session {
         var arena = std.heap.ArenaAllocator.init(gpa);
         errdefer arena.deinit();
         const owned_cwd = try arena.allocator().dupe(u8, cwd);
@@ -102,11 +98,7 @@ pub const Registry = struct {
         self.sessions.deinit();
     }
 
-    pub fn create(
-        self: *Registry,
-        id: schema.agent.SessionId,
-        cwd: []const u8,
-    ) AcpError!*Session {
+    pub fn create(self: *Registry, id: schema.agent.SessionId, cwd: []const u8) AcpError!*Session {
         if (self.sessions.contains(id.value)) return error.InvalidParams;
         const sess = self.gpa.create(Session) catch return error.OutOfMemory;
         errdefer self.gpa.destroy(sess);

@@ -11,11 +11,7 @@ pub const PlanEntryStatus = enum {
         try jw.write(@tagName(self));
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !PlanEntryStatus {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !PlanEntryStatus {
         const tok = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
         defer freeToken(allocator, tok);
         const slice = switch (tok) {
@@ -25,11 +21,7 @@ pub const PlanEntryStatus = enum {
         return std.meta.stringToEnum(PlanEntryStatus, slice) orelse error.InvalidEnumTag;
     }
 
-    pub fn jsonParseFromValue(
-        _: std.mem.Allocator,
-        source: std.json.Value,
-        _: std.json.ParseOptions,
-    ) !PlanEntryStatus {
+    pub fn jsonParseFromValue(_: std.mem.Allocator, source: std.json.Value, _: std.json.ParseOptions) !PlanEntryStatus {
         if (source != .string) return error.UnexpectedToken;
         return std.meta.stringToEnum(PlanEntryStatus, source.string) orelse error.InvalidEnumTag;
     }
@@ -44,11 +36,7 @@ pub const Priority = enum {
         try jw.write(@tagName(self));
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !Priority {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Priority {
         const tok = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
         defer freeToken(allocator, tok);
         const slice = switch (tok) {
@@ -58,11 +46,7 @@ pub const Priority = enum {
         return std.meta.stringToEnum(Priority, slice) orelse error.InvalidEnumTag;
     }
 
-    pub fn jsonParseFromValue(
-        _: std.mem.Allocator,
-        source: std.json.Value,
-        _: std.json.ParseOptions,
-    ) !Priority {
+    pub fn jsonParseFromValue(_: std.mem.Allocator, source: std.json.Value, _: std.json.ParseOptions) !Priority {
         if (source != .string) return error.UnexpectedToken;
         return std.meta.stringToEnum(Priority, source.string) orelse error.InvalidEnumTag;
     }

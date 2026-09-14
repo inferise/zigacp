@@ -10,7 +10,6 @@ const std = @import("std");
 const schema = @import("acp-schema");
 const AcpError = @import("errors.zig").AcpError;
 const Transport = @import("transport.zig").Transport;
-const Frame = @import("transport.zig").Frame;
 const RequestHandler = @import("handler.zig").RequestHandler;
 const NotificationHandler = @import("handler.zig").NotificationHandler;
 const TraceBuffer = @import("trace.zig").Buffer;
@@ -27,10 +26,7 @@ pub const Connection = struct {
 
     /// Borrow `transport`. The Connection does not take ownership; the
     /// caller is responsible for closing it when the connection ends.
-    pub fn init(
-        allocator: std.mem.Allocator,
-        transport: Transport,
-    ) Connection {
+    pub fn init(allocator: std.mem.Allocator, transport: Transport) Connection {
         return .{ .allocator = allocator, .transport = transport };
     }
 
@@ -69,11 +65,7 @@ pub const Connection = struct {
     }
 
     /// Send a notification (no response expected).
-    pub fn notify(
-        self: *Connection,
-        method: []const u8,
-        params: anytype,
-    ) AcpError!void {
+    pub fn notify(self: *Connection, method: []const u8, params: anytype) AcpError!void {
         var buf: std.Io.Writer.Allocating = .init(self.allocator);
         defer buf.deinit();
         const w = &buf.writer;
@@ -89,12 +81,7 @@ pub const Connection = struct {
 
     /// Send a request, then pump frames until the matching response arrives.
     /// Incoming requests and notifications during the wait are dispatched.
-    pub fn request(
-        self: *Connection,
-        comptime ResultT: type,
-        method: []const u8,
-        params: anytype,
-    ) AcpError!std.json.Parsed(ResultT) {
+    pub fn request(self: *Connection, comptime ResultT: type, method: []const u8, params: anytype) AcpError!std.json.Parsed(ResultT) {
         const id = self.next_id;
         self.next_id += 1;
 
@@ -195,12 +182,7 @@ pub const Connection = struct {
         }
     }
 
-    fn dispatchRequest(
-        self: *Connection,
-        id_v: std.json.Value,
-        method: []const u8,
-        params: std.json.Value,
-    ) AcpError!void {
+    fn dispatchRequest(self: *Connection, id_v: std.json.Value, method: []const u8, params: std.json.Value) AcpError!void {
         const handler = self.request_handler orelse {
             try self.writeError(id_v, -32601, "method not found");
             return;
@@ -226,11 +208,7 @@ pub const Connection = struct {
         try self.writeResult(id_v, result);
     }
 
-    fn dispatchNotification(
-        self: *Connection,
-        method: []const u8,
-        params: std.json.Value,
-    ) AcpError!void {
+    fn dispatchNotification(self: *Connection, method: []const u8, params: std.json.Value) AcpError!void {
         const handler = self.notification_handler orelse return;
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();

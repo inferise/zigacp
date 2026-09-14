@@ -77,11 +77,7 @@ pub fn main() !void {
 // Writing the request through the public transport rather than via
 // `Connection.request` keeps this single-threaded: we control the
 // interleave of write -> peer pump -> read explicitly.
-fn writeRequest(
-    conn: *acp.Connection,
-    method: []const u8,
-    params: anytype,
-) !void {
+fn writeRequest(conn: *acp.Connection, method: []const u8, params: anytype) !void {
     var buf: std.Io.Writer.Allocating = .init(conn.allocator);
     defer buf.deinit();
     const w = &buf.writer;
@@ -95,10 +91,7 @@ fn writeRequest(
     try conn.transport.writeFrame(.{ .bytes = buf.written() });
 }
 
-fn readResponse(
-    comptime ResultT: type,
-    conn: *acp.Connection,
-) !std.json.Parsed(ResultT) {
+fn readResponse(comptime ResultT: type, conn: *acp.Connection) !std.json.Parsed(ResultT) {
     const frame_bytes = try conn.transport.readFrame(conn.allocator);
     defer conn.allocator.free(frame_bytes);
     const parsed = try std.json.parseFromSlice(std.json.Value, conn.allocator, frame_bytes, .{});
@@ -108,12 +101,7 @@ fn readResponse(
 }
 
 const AgentStub = struct {
-    fn handle(
-        _: *anyopaque,
-        allocator: std.mem.Allocator,
-        method: []const u8,
-        _: std.json.Value,
-    ) acp.AcpError!std.json.Value {
+    fn handle(_: *anyopaque, allocator: std.mem.Allocator, method: []const u8, _: std.json.Value) acp.AcpError!std.json.Value {
         if (std.mem.eql(u8, method, schema.agent.method_initialize)) {
             return parse(allocator, "{\"protocolVersion\":1}");
         }

@@ -91,11 +91,7 @@ const InitializeHandler = struct {
         protocolVersion: schema.ProtocolVersion,
     };
 
-    pub fn handle(
-        _: *InitializeHandler,
-        _: std.mem.Allocator,
-        params: Params,
-    ) acp.AcpError!Result {
+    pub fn handle(_: *InitializeHandler, _: std.mem.Allocator, params: Params) acp.AcpError!Result {
         return .{ .protocolVersion = params.protocolVersion };
     }
 };
@@ -109,11 +105,7 @@ const PromptHandler = struct {
         stopReason: schema.agent.StopReason,
     };
 
-    pub fn handle(
-        _: *PromptHandler,
-        _: std.mem.Allocator,
-        _: Params,
-    ) acp.AcpError!Result {
+    pub fn handle(_: *PromptHandler, _: std.mem.Allocator, _: Params) acp.AcpError!Result {
         // Fixed greeting: a real agent would generate a reply and stream
         // session/update notifications. The point here is the dispatch
         // surface, not content generation.
@@ -121,11 +113,7 @@ const PromptHandler = struct {
     }
 };
 
-fn writeRequest(
-    conn: *acp.Connection,
-    method: []const u8,
-    params: anytype,
-) !void {
+fn writeRequest(conn: *acp.Connection, method: []const u8, params: anytype) !void {
     var buf: std.Io.Writer.Allocating = .init(conn.allocator);
     defer buf.deinit();
     const w = &buf.writer;
@@ -139,10 +127,7 @@ fn writeRequest(
     try conn.transport.writeFrame(.{ .bytes = buf.written() });
 }
 
-fn readResponse(
-    comptime ResultT: type,
-    conn: *acp.Connection,
-) !std.json.Parsed(ResultT) {
+fn readResponse(comptime ResultT: type, conn: *acp.Connection) !std.json.Parsed(ResultT) {
     const frame_bytes = try conn.transport.readFrame(conn.allocator);
     defer conn.allocator.free(frame_bytes);
     const parsed = try std.json.parseFromSlice(std.json.Value, conn.allocator, frame_bytes, .{});

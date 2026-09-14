@@ -18,11 +18,7 @@ const impl = struct {
             try jw.write(@tagName(self));
         }
 
-        pub fn jsonParse(
-            allocator: std.mem.Allocator,
-            source: anytype,
-            options: std.json.ParseOptions,
-        ) !NesEditKind {
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !NesEditKind {
             const tok = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
             defer freeToken(allocator, tok);
             const slice = switch (tok) {
@@ -32,11 +28,7 @@ const impl = struct {
             return std.meta.stringToEnum(NesEditKind, slice) orelse error.InvalidEnumTag;
         }
 
-        pub fn jsonParseFromValue(
-            _: std.mem.Allocator,
-            source: std.json.Value,
-            _: std.json.ParseOptions,
-        ) !NesEditKind {
+        pub fn jsonParseFromValue(_: std.mem.Allocator, source: std.json.Value, _: std.json.ParseOptions) !NesEditKind {
             if (source != .string) return error.UnexpectedToken;
             return std.meta.stringToEnum(NesEditKind, source.string) orelse error.InvalidEnumTag;
         }
@@ -75,11 +67,7 @@ const impl = struct {
             });
         }
 
-        pub fn jsonParse(
-            allocator: std.mem.Allocator,
-            source: anytype,
-            options: std.json.ParseOptions,
-        ) !NesAction {
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !NesAction {
             const tok = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
             defer freeToken(allocator, tok);
             const slice = switch (tok) {
@@ -89,11 +77,7 @@ const impl = struct {
             return decode(slice);
         }
 
-        pub fn jsonParseFromValue(
-            _: std.mem.Allocator,
-            source: std.json.Value,
-            _: std.json.ParseOptions,
-        ) !NesAction {
+        pub fn jsonParseFromValue(_: std.mem.Allocator, source: std.json.Value, _: std.json.ParseOptions) !NesAction {
             if (source != .string) return error.UnexpectedToken;
             return decode(source.string);
         }

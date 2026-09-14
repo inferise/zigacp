@@ -28,11 +28,7 @@ pub const ProtocolVersion = struct {
         try jw.write(self.value);
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !ProtocolVersion {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !ProtocolVersion {
         const token = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
         defer freeToken(allocator, token);
         const slice = switch (token) {
@@ -43,11 +39,7 @@ pub const ProtocolVersion = struct {
         return .{ .value = v };
     }
 
-    pub fn jsonParseFromValue(
-        allocator: std.mem.Allocator,
-        source: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !ProtocolVersion {
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !ProtocolVersion {
         _ = allocator;
         _ = options;
         switch (source) {

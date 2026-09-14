@@ -28,11 +28,7 @@ pub const PermissionOptionKind = enum {
         try jw.write(@tagName(self));
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !PermissionOptionKind {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !PermissionOptionKind {
         const tok = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
         defer freeToken(allocator, tok);
         const slice = switch (tok) {
@@ -42,11 +38,7 @@ pub const PermissionOptionKind = enum {
         return std.meta.stringToEnum(PermissionOptionKind, slice) orelse error.InvalidEnumTag;
     }
 
-    pub fn jsonParseFromValue(
-        _: std.mem.Allocator,
-        source: std.json.Value,
-        _: std.json.ParseOptions,
-    ) !PermissionOptionKind {
+    pub fn jsonParseFromValue(_: std.mem.Allocator, source: std.json.Value, _: std.json.ParseOptions) !PermissionOptionKind {
         if (source != .string) return error.UnexpectedToken;
         return std.meta.stringToEnum(PermissionOptionKind, source.string) orelse error.InvalidEnumTag;
     }
@@ -87,20 +79,12 @@ pub const RequestPermissionOutcome = union(enum) {
         }
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !RequestPermissionOutcome {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !RequestPermissionOutcome {
         const v = try std.json.innerParse(std.json.Value, allocator, source, options);
         return jsonParseFromValue(allocator, v, options);
     }
 
-    pub fn jsonParseFromValue(
-        allocator: std.mem.Allocator,
-        source: std.json.Value,
-        _: std.json.ParseOptions,
-    ) !RequestPermissionOutcome {
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, _: std.json.ParseOptions) !RequestPermissionOutcome {
         if (source != .object) return error.UnexpectedToken;
         const tag_v = source.object.get("outcome") orelse return error.MissingField;
         if (tag_v != .string) return error.UnexpectedToken;
@@ -157,11 +141,7 @@ pub const TerminalId = struct {
         try jw.write(self.value);
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !TerminalId {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !TerminalId {
         const tok = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
         const slice = switch (tok) {
             .string => |s| try allocator.dupe(u8, s),
@@ -171,11 +151,7 @@ pub const TerminalId = struct {
         return .{ .value = slice };
     }
 
-    pub fn jsonParseFromValue(
-        allocator: std.mem.Allocator,
-        source: std.json.Value,
-        _: std.json.ParseOptions,
-    ) !TerminalId {
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, _: std.json.ParseOptions) !TerminalId {
         if (source != .string) return error.UnexpectedToken;
         return .{ .value = try allocator.dupe(u8, source.string) };
     }

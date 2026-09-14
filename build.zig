@@ -1,4 +1,5 @@
 const std = @import("std");
+const deps = @import("build.deps.zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -45,11 +46,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     acp_conductor.addImport("acp", acp);
-
-    const vaxis_dep = b.lazyDependency("vaxis", .{
-        .target = target,
-        .optimize = optimize,
-    });
 
     const test_step = b.step("test", "Run unit tests");
 
@@ -115,6 +111,12 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(minimal_agent_exe);
     cookbook_step.dependOn(&minimal_agent_exe.step);
 
+    const demo_client_run = b.addRunArtifact(minimal_client_exe);
+    const demo_agent_run = b.addRunArtifact(minimal_agent_exe);
+    demo_agent_run.step.dependOn(&demo_client_run.step);
+    const demo_step = b.step("demo", "Run the cookbook client and agent examples");
+    demo_step.dependOn(&demo_agent_run.step);
+
     const gen_schema_module = b.createModule(.{
         .root_source_file = b.path("tools/gen_schema/main.zig"),
         .target = target,
@@ -152,9 +154,24 @@ pub fn build(b: *std.Build) void {
     const yopo_step = b.step("yopo", "Run the reference agent contract suite");
     yopo_step.dependOn(&yopo_run.step);
 
-    if (vaxis_dep) |dep| {
-        const vaxis_module = dep.module("vaxis");
+    const run_yopo = b.addRunArtifact(yopo_exe);
+    if (b.args) |args| run_yopo.addArgs(args);
+    const run_step = b.step("run", "Run the reference agent (yopo)");
+    run_step.dependOn(&run_yopo.step);
 
+    const docs_obj = b.addObject(.{
+        .name = "acp-docs",
+        .root_module = acp,
+    });
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = docs_obj.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+    const docs_step = b.step("docs", "Emit API documentation to zig-out/docs");
+    docs_step.dependOn(&install_docs.step);
+
+    if (deps.resolveModule(b, "zigvaxis", target, optimize)) |vaxis_module| {
         const trace_viewer_module = b.createModule(.{
             .root_source_file = b.path("src/acp-trace-viewer/main.zig"),
             .target = target,

@@ -20,21 +20,13 @@ pub const Dispatcher = struct {
     pub const RequestEntry = struct {
         method: []const u8,
         ptr: *anyopaque,
-        thunk: *const fn (
-            ctx: *anyopaque,
-            allocator: std.mem.Allocator,
-            params: std.json.Value,
-        ) AcpError!std.json.Value,
+        thunk: *const fn (ctx: *anyopaque, allocator: std.mem.Allocator, params: std.json.Value) AcpError!std.json.Value,
     };
 
     pub const NotificationEntry = struct {
         method: []const u8,
         ptr: *anyopaque,
-        thunk: *const fn (
-            ctx: *anyopaque,
-            allocator: std.mem.Allocator,
-            params: std.json.Value,
-        ) AcpError!void,
+        thunk: *const fn (ctx: *anyopaque, allocator: std.mem.Allocator, params: std.json.Value) AcpError!void,
     };
 
     pub fn init(allocator: std.mem.Allocator) Dispatcher {
@@ -51,18 +43,9 @@ pub const Dispatcher = struct {
     /// `Handler` is an instance type that defines `pub const Params = ...`,
     /// `pub const Result = ...`, and `pub fn handle(self, allocator,
     /// params: Params) AcpError!Result`.
-    pub fn registerRequest(
-        self: *Dispatcher,
-        method: []const u8,
-        comptime Handler: type,
-        instance: *Handler,
-    ) !void {
+    pub fn registerRequest(self: *Dispatcher, method: []const u8, comptime Handler: type, instance: *Handler) !void {
         const Thunk = struct {
-            fn invoke(
-                ctx: *anyopaque,
-                allocator: std.mem.Allocator,
-                params: std.json.Value,
-            ) AcpError!std.json.Value {
+            fn invoke(ctx: *anyopaque, allocator: std.mem.Allocator, params: std.json.Value) AcpError!std.json.Value {
                 const inst: *Handler = @ptrCast(@alignCast(ctx));
                 const parsed = std.json.parseFromValueLeaky(
                     Handler.Params,
@@ -81,18 +64,9 @@ pub const Dispatcher = struct {
         });
     }
 
-    pub fn registerNotification(
-        self: *Dispatcher,
-        method: []const u8,
-        comptime Handler: type,
-        instance: *Handler,
-    ) !void {
+    pub fn registerNotification(self: *Dispatcher, method: []const u8, comptime Handler: type, instance: *Handler) !void {
         const Thunk = struct {
-            fn invoke(
-                ctx: *anyopaque,
-                allocator: std.mem.Allocator,
-                params: std.json.Value,
-            ) AcpError!void {
+            fn invoke(ctx: *anyopaque, allocator: std.mem.Allocator, params: std.json.Value) AcpError!void {
                 const inst: *Handler = @ptrCast(@alignCast(ctx));
                 const parsed = std.json.parseFromValueLeaky(
                     Handler.Params,
@@ -120,12 +94,7 @@ pub const Dispatcher = struct {
         return .{ .ptr = self, .vtable = &notification_vtable };
     }
 
-    fn handleRequest(
-        ctx: *anyopaque,
-        allocator: std.mem.Allocator,
-        method: []const u8,
-        params: std.json.Value,
-    ) AcpError!std.json.Value {
+    fn handleRequest(ctx: *anyopaque, allocator: std.mem.Allocator, method: []const u8, params: std.json.Value) AcpError!std.json.Value {
         const self: *Dispatcher = @ptrCast(@alignCast(ctx));
         for (self.request_entries.items) |entry| {
             if (std.mem.eql(u8, entry.method, method)) {
@@ -135,12 +104,7 @@ pub const Dispatcher = struct {
         return error.MethodNotFound;
     }
 
-    fn handleNotification(
-        ctx: *anyopaque,
-        allocator: std.mem.Allocator,
-        method: []const u8,
-        params: std.json.Value,
-    ) AcpError!void {
+    fn handleNotification(ctx: *anyopaque, allocator: std.mem.Allocator, method: []const u8, params: std.json.Value) AcpError!void {
         const self: *Dispatcher = @ptrCast(@alignCast(ctx));
         for (self.notification_entries.items) |entry| {
             if (std.mem.eql(u8, entry.method, method)) {

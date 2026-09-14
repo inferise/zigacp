@@ -91,7 +91,12 @@ const Agent = struct {
         pub fn handle(self: *@This(), _: std.mem.Allocator, params: Params) acp.AcpError!Result {
             const sess = try self.agent.sessions.get(params.sessionId);
             try sess.beginPrompt();
-            defer sess.endPrompt() catch {};
+            // A cancel arriving mid-prompt already cleared the prompting state,
+            // so the deferred end can legitimately find nothing to end.
+            defer sess.endPrompt() catch |err| log.debug(
+                "endPrompt on session '{s}': {s}",
+                .{ params.sessionId.value, @errorName(err) },
+            );
             return .{ .stopReason = .end_turn };
         }
     };
@@ -109,8 +114,12 @@ const Agent = struct {
         pub const Params = schema.agent.CancelNotification;
         pub fn handle(self: *@This(), _: std.mem.Allocator, params: Params) acp.AcpError!void {
             const sess = self.agent.sessions.get(params.sessionId) catch return;
-            // Cancel is observed by clearing the prompting state if any.
-            sess.endPrompt() catch {};
+            // Cancel is observed by clearing the prompting state if any;
+            // a session that was not prompting is a no-op, not a failure.
+            sess.endPrompt() catch |err| log.debug(
+                "cancel on non-prompting session '{s}': {s}",
+                .{ params.sessionId.value, @errorName(err) },
+            );
         }
     };
 };
@@ -228,13 +237,7 @@ fn driveContract(client: *acp.Connection, agent: *acp.Connection) !void {
     }
 }
 
-fn clientRoundTrip(
-    comptime ResultT: type,
-    client: *acp.Connection,
-    agent: *acp.Connection,
-    method: []const u8,
-    params: anytype,
-) !std.json.Parsed(ResultT) {
+fn clientRoundTrip(comptime ResultT: type, client: *acp.Connection, agent: *acp.Connection, method: []const u8, params: anytype) !std.json.Parsed(ResultT) {
     var buf: std.Io.Writer.Allocating = .init(client.allocator);
     defer buf.deinit();
     const w = &buf.writer;

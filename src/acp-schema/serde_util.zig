@@ -15,20 +15,12 @@ pub const RawValue = struct {
         try jw.write(self.value);
     }
 
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !RawValue {
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !RawValue {
         const v = try std.json.innerParse(std.json.Value, allocator, source, options);
         return .{ .value = v };
     }
 
-    pub fn jsonParseFromValue(
-        allocator: std.mem.Allocator,
-        source: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !RawValue {
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !RawValue {
         _ = allocator;
         _ = options;
         return .{ .value = source };

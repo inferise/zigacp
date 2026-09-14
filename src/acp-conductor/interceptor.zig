@@ -56,10 +56,7 @@ pub const RequestInterceptor = struct {
     vtable: *const VTable,
 
     pub const VTable = struct {
-        on_request: *const fn (
-            ctx: *anyopaque,
-            call: RequestContext,
-        ) AcpError!RequestOutcome,
+        on_request: *const fn (ctx: *anyopaque, call: RequestContext) AcpError!RequestOutcome,
     };
 
     pub fn onRequest(self: RequestInterceptor, call: RequestContext) AcpError!RequestOutcome {
@@ -72,16 +69,10 @@ pub const NotificationInterceptor = struct {
     vtable: *const VTable,
 
     pub const VTable = struct {
-        on_notification: *const fn (
-            ctx: *anyopaque,
-            call: NotificationContext,
-        ) AcpError!NotificationOutcome,
+        on_notification: *const fn (ctx: *anyopaque, call: NotificationContext) AcpError!NotificationOutcome,
     };
 
-    pub fn onNotification(
-        self: NotificationInterceptor,
-        call: NotificationContext,
-    ) AcpError!NotificationOutcome {
+    pub fn onNotification(self: NotificationInterceptor, call: NotificationContext) AcpError!NotificationOutcome {
         return self.vtable.on_notification(self.ptr, call);
     }
 };

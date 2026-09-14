@@ -38,12 +38,7 @@ pub const AgentRequest = union(enum) {
         };
     }
 
-    pub fn parseFromMethod(
-        allocator: std.mem.Allocator,
-        method: []const u8,
-        params: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !AgentRequest {
+    pub fn parseFromMethod(allocator: std.mem.Allocator, method: []const u8, params: std.json.Value, options: std.json.ParseOptions) !AgentRequest {
         if (std.mem.eql(u8, method, agent.method_initialize))
             return .{ .initialize = try std.json.parseFromValueLeaky(agent.InitializeRequest, allocator, params, options) };
         if (std.mem.eql(u8, method, agent.method_authenticate))
@@ -75,12 +70,7 @@ pub const AgentResponse = union(enum) {
     set_mode: agent.SetModeResponse,
     set_config_option: agent.SetConfigOptionResponse,
 
-    pub fn parseFromMethod(
-        allocator: std.mem.Allocator,
-        method: []const u8,
-        result: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !AgentResponse {
+    pub fn parseFromMethod(allocator: std.mem.Allocator, method: []const u8, result: std.json.Value, options: std.json.ParseOptions) !AgentResponse {
         if (std.mem.eql(u8, method, agent.method_initialize))
             return .{ .initialize = try std.json.parseFromValueLeaky(agent.InitializeResponse, allocator, result, options) };
         if (std.mem.eql(u8, method, agent.method_authenticate))
@@ -111,12 +101,7 @@ pub const AgentNotification = union(enum) {
         };
     }
 
-    pub fn parseFromMethod(
-        allocator: std.mem.Allocator,
-        method: []const u8,
-        params: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !AgentNotification {
+    pub fn parseFromMethod(allocator: std.mem.Allocator, method: []const u8, params: std.json.Value, options: std.json.ParseOptions) !AgentNotification {
         if (std.mem.eql(u8, method, agent.method_session_cancel))
             return .{ .cancel = try std.json.parseFromValueLeaky(agent.CancelNotification, allocator, params, options) };
         return error.MethodNotFound;
@@ -151,12 +136,7 @@ pub const ClientRequest = union(enum) {
         };
     }
 
-    pub fn parseFromMethod(
-        allocator: std.mem.Allocator,
-        method: []const u8,
-        params: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !ClientRequest {
+    pub fn parseFromMethod(allocator: std.mem.Allocator, method: []const u8, params: std.json.Value, options: std.json.ParseOptions) !ClientRequest {
         if (std.mem.eql(u8, method, client.method_session_request_permission))
             return .{ .request_permission = try std.json.parseFromValueLeaky(client.RequestPermissionRequest, allocator, params, options) };
         if (std.mem.eql(u8, method, client.method_fs_read_text_file))
@@ -188,12 +168,7 @@ pub const ClientResponse = union(enum) {
     wait_for_terminal_exit: client.WaitForTerminalExitResponse,
     kill_terminal: client.KillTerminalResponse,
 
-    pub fn parseFromMethod(
-        allocator: std.mem.Allocator,
-        method: []const u8,
-        result: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !ClientResponse {
+    pub fn parseFromMethod(allocator: std.mem.Allocator, method: []const u8, result: std.json.Value, options: std.json.ParseOptions) !ClientResponse {
         if (std.mem.eql(u8, method, client.method_session_request_permission))
             return .{ .request_permission = try std.json.parseFromValueLeaky(client.RequestPermissionResponse, allocator, result, options) };
         if (std.mem.eql(u8, method, client.method_fs_read_text_file))
@@ -224,12 +199,7 @@ pub const ClientNotification = union(enum) {
         };
     }
 
-    pub fn parseFromMethod(
-        allocator: std.mem.Allocator,
-        method: []const u8,
-        params: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !ClientNotification {
+    pub fn parseFromMethod(allocator: std.mem.Allocator, method: []const u8, params: std.json.Value, options: std.json.ParseOptions) !ClientNotification {
         if (std.mem.eql(u8, method, agent.method_session_update))
             return .{ .session_update = try std.json.parseFromValueLeaky(agent.SessionNotification, allocator, params, options) };
         return error.MethodNotFound;
