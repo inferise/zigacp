@@ -148,7 +148,43 @@ pub const Connection = struct {
     pub fn pumpOne(self: *Connection) AcpError!void {
         const frame_bytes = try self.readTraced();
         defer self.allocator.free(frame_bytes);
+        return self.dispatchFrame(frame_bytes);
+    }
 
+    /// What one turn of `pumpPending` did.
+    pub const Pumped = enum {
+        /// A frame was read and dispatched.
+        dispatched,
+        /// Nothing was waiting.
+        idle,
+        /// This transport cannot be polled; use `pumpOne` or wait some other way.
+        unsupported,
+    };
+
+    /// Dispatch a frame if one is already waiting, without ever blocking.
+    ///
+    /// For a caller that is itself inside a handler and cannot give the serve
+    /// loop back yet: an agent running a turn calls this between polls so a
+    /// `session/cancel` arriving mid-turn is read and acted on rather than
+    /// sitting unread until the turn it was meant to stop has finished.
+    ///
+    /// Dispatch is re-entrant, exactly as it already is inside `request`.
+    pub fn pumpPending(self: *Connection) AcpError!Pumped {
+        if (!self.transport.canPoll()) return .unsupported;
+
+        const frame_bytes = try self.transport.tryReadFrame(self.allocator) orelse return .idle;
+        defer self.allocator.free(frame_bytes);
+
+        if (self.trace) |t| t.push(.inbound, frame_bytes) catch |err| {
+            log.warn("trace push (inbound) failed: {s}", .{@errorName(err)});
+        };
+
+        try self.dispatchFrame(frame_bytes);
+        return .dispatched;
+    }
+
+    /// Parse one frame and route it to the right handler.
+    fn dispatchFrame(self: *Connection, frame_bytes: []const u8) AcpError!void {
         const parsed = std.json.parseFromSlice(std.json.Value, self.allocator, frame_bytes, .{}) catch {
             return error.InvalidMessage;
         };

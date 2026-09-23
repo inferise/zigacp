@@ -47,6 +47,17 @@ pub fn build(b: *std.Build) void {
     });
     acp_conductor.addImport("acp", acp);
 
+    // The barrel: one flat namespace over the three modules the harnesses
+    // consume. See `src/module.zig` for the naming convention.
+    const zigacp = b.addModule("zigacp", .{
+        .root_source_file = b.path("src/module.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    zigacp.addImport("acp", acp);
+    zigacp.addImport("acp-schema", schema);
+    zigacp.addImport("acp-async", acp_async);
+
     const test_step = b.step("test", "Run unit tests");
 
     const schema_tests = b.addTest(.{
@@ -78,6 +89,12 @@ pub fn build(b: *std.Build) void {
         .root_module = acp_conductor,
     });
     test_step.dependOn(&b.addRunArtifact(acp_conductor_tests).step);
+
+    const zigacp_tests = b.addTest(.{
+        .name = "zigacp-tests",
+        .root_module = zigacp,
+    });
+    test_step.dependOn(&b.addRunArtifact(zigacp_tests).step);
 
     const cookbook_step = b.step("cookbook", "Build cookbook examples");
 

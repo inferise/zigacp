@@ -30,6 +30,18 @@ pub const Transport = struct {
         /// Returns `error.TransportClosed` on clean EOF.
         read_frame: *const fn (ctx: *anyopaque, allocator: std.mem.Allocator) AcpError![]u8,
 
+        /// Read a frame only if one is already waiting, never blocking.
+        ///
+        /// Optional, and null by default: a transport that cannot answer
+        /// "is there anything to read?" simply does not offer it, and callers
+        /// fall back to `read_frame`. It exists so a handler that is itself
+        /// blocking — an agent running a turn — can service the connection
+        /// between polls instead of leaving the peer unheard until it returns.
+        ///
+        /// Returns null when nothing is queued, and `error.TransportClosed`
+        /// on clean EOF.
+        try_read_frame: ?*const fn (ctx: *anyopaque, allocator: std.mem.Allocator) AcpError!?[]u8 = null,
+
         /// Release any internal resources.
         close: *const fn (ctx: *anyopaque) void,
     };
@@ -40,6 +52,18 @@ pub const Transport = struct {
 
     pub fn readFrame(self: Transport, allocator: std.mem.Allocator) AcpError![]u8 {
         return self.vtable.read_frame(self.ptr, allocator);
+    }
+
+    /// Whether this transport can be read without blocking.
+    pub fn canPoll(self: Transport) bool {
+        return self.vtable.try_read_frame != null;
+    }
+
+    /// Read a waiting frame, or null when none is queued or polling is not
+    /// supported. Callers that need to tell those apart ask `canPoll` first.
+    pub fn tryReadFrame(self: Transport, allocator: std.mem.Allocator) AcpError!?[]u8 {
+        const poll = self.vtable.try_read_frame orelse return null;
+        return poll(self.ptr, allocator);
     }
 
     pub fn close(self: Transport) void {

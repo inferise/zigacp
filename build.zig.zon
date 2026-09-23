@@ -1,7 +1,7 @@
 .{
     .name = .zigacp,
-    .description = "Inferise Zig ACP Module",
-    .version = "1.0.0",
+    .description = "Zig ACP Module",
+    .version = "1.0.1",
     .fingerprint = 0x7e68bdcdb9528453,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
