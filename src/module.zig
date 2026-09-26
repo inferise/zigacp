@@ -45,6 +45,8 @@ pub const Transport = acp.Transport;
 pub const Frame = acp.Frame;
 /// An in-process pair whose reads block until a frame arrives.
 pub const FrameTransport = acp_async.FrameTransport;
+/// A file-handle pair (a process's stdio) whose reads can be polled mid-turn.
+pub const StdioTransport = acp_async.StdioTransport;
 
 // -----------------------------------------------------------------------------
 // Shared schema (acp-schema)
