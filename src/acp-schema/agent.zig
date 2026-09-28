@@ -102,16 +102,50 @@ pub const SessionId = struct {
 };
 
 /// External MCP server the client wants the agent to bridge into the session.
+///
+/// ACP v1 has three shapes: stdio (`command`, `args`, `env`, and no `type`),
+/// `http` and `sse` (`type`, `url`, `headers`). One struct with the
+/// transport-specific fields optional parses all three, so an agent never
+/// refuses a session over a server it could have skipped; `isStdio`/`isHttp`
+/// say which it is.
 pub const McpServerConfig = struct {
     name: []const u8,
-    command: []const u8,
+    /// `http` or `sse`; absent for stdio.
+    type: ?[]const u8 = null,
+    /// Stdio: the executable.
+    command: ?[]const u8 = null,
     args: ?[]const []const u8 = null,
     env: ?[]const McpEnv = null,
+    /// HTTP / SSE: where the server listens.
+    url: ?[]const u8 = null,
+    headers: ?[]const McpEnv = null,
 
+    /// A name/value pair: an environment variable for stdio, a header for HTTP.
     pub const McpEnv = struct {
         name: []const u8,
         value: []const u8,
     };
+
+    /// Reports whether this is a stdio server.
+    ///
+    /// Parameters:
+    /// - `self`: the server.
+    ///
+    /// Return: true when it names a command and no network transport.
+    pub fn isStdio(self: McpServerConfig) bool {
+        return self.type == null and self.command != null;
+    }
+
+    /// Reports whether this is a Streamable HTTP server.
+    ///
+    /// Parameters:
+    /// - `self`: the server.
+    ///
+    /// Return: true for `type: "http"` with a URL.
+    pub fn isHttp(self: McpServerConfig) bool {
+        const kind = self.type orelse return false;
+        return std.mem.eql(u8, kind, "http") and self.url != null;
+    }
 };
 
 pub const method_session_new: []const u8 = "session/new";
@@ -518,6 +552,19 @@ test "InitializeRequest stringifies omitting null capabilities" {
     const out = try std.json.Stringify.valueAlloc(std.testing.allocator, req, .{ .emit_null_optional_fields = false });
     defer std.testing.allocator.free(out);
     try std.testing.expectEqualStrings("{\"protocolVersion\":1}", out);
+}
+
+test "an HTTP MCP server parses beside a stdio one" {
+    const src =
+        \\{"cwd":"/p","mcpServers":[{"type":"http","name":"inferise","url":"http://127.0.0.1:4000/mcp","headers":[{"name":"Authorization","value":"Bearer t"}]},{"name":"git","command":"mcp-git","args":[],"env":[]}]}
+    ;
+    const parsed = try std.json.parseFromSlice(NewSessionRequest, std.testing.allocator, src, .{});
+    defer parsed.deinit();
+    const servers = parsed.value.mcpServers.?;
+    try std.testing.expect(servers[0].isHttp());
+    try std.testing.expectEqualStrings("Bearer t", servers[0].headers.?[0].value);
+    try std.testing.expect(servers[1].isStdio());
+    try std.testing.expect(!servers[1].isHttp());
 }
 
 test "NewSessionRequest with mcp servers" {
