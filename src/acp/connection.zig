@@ -120,7 +120,10 @@ pub const Connection = struct {
                         return error.PeerError;
                     }
                     const result_v = obj.get("result") orelse return error.InvalidMessage;
-                    return std.json.parseFromValue(ResultT, self.allocator, result_v, .{}) catch
+                    // Lenient exactly as inbound params already are (`typed.zig`):
+                    // a peer adding a field — a newer schema, or its own `_meta`
+                    // extras — must not turn a good reply into `InvalidParams`.
+                    return std.json.parseFromValue(ResultT, self.allocator, result_v, .{ .ignore_unknown_fields = true }) catch
                         return error.InvalidParams;
                 }
                 // Not our response — could be an incoming request from peer.

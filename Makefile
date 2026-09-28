@@ -26,7 +26,7 @@ all: build format test
 	@echo "done"
 
 # Full pre-commit gate: clean, format, lint, build, then test.
-validate: clean format lint build test
+validate: clean format lint build windows test
 	@echo "validate done"
 
 # ---------------------------------------------
@@ -86,7 +86,7 @@ format:
 # buries our findings in third-party noise — so feed them an explicit list.
 lint:
 	find build*.zig src tools -name '*.zig' | xargs zlintpre
-	find build*.zig src tools -name '*.zig' | zlint -c styleguide -S
+	find build*.zig src tools -name '*.zig' | zlint -c styleguide/zlint.json -S
 
 # ---------------------------------------------
 # Documentation

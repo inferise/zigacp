@@ -70,6 +70,8 @@ pub const Agent = struct {
     pub const method_session_prompt = schema.agent.method_session_prompt;
     pub const method_session_cancel = schema.agent.method_session_cancel;
     pub const method_session_update = schema.agent.method_session_update;
+    pub const method_session_set_mode = schema.agent.method_session_set_mode;
+    pub const method_session_set_config_option = schema.agent.method_session_set_config_option;
 
     pub const InitializeRequest = schema.agent.InitializeRequest;
     pub const InitializeResponse = schema.agent.InitializeResponse;
@@ -87,6 +89,16 @@ pub const Agent = struct {
     pub const SessionInfo = schema.agent.SessionInfo;
     pub const StopReason = schema.agent.StopReason;
     pub const McpServerConfig = schema.agent.McpServerConfig;
+    pub const SetModeRequest = schema.agent.SetModeRequest;
+    pub const SetModeResponse = schema.agent.SetModeResponse;
+    pub const SetConfigOptionRequest = schema.agent.SetConfigOptionRequest;
+    pub const SetConfigOptionResponse = schema.agent.SetConfigOptionResponse;
+    pub const SessionMode = schema.agent.SessionMode;
+    pub const SessionModeState = schema.agent.SessionModeState;
+    pub const SessionConfigOption = schema.agent.SessionConfigOption;
+    pub const SessionConfigSelectOption = schema.agent.SessionConfigSelectOption;
+    pub const AvailableCommand = schema.agent.AvailableCommand;
+    pub const UsageUpdate = schema.agent.UsageUpdate;
 };
 
 // -----------------------------------------------------------------------------

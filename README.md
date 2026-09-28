@@ -17,7 +17,7 @@ This repository is a native **Zig** implementation. It gives you allocator-aware
 
 - [`acp-schema`](./src/acp-schema/) — Wire-format types: methods, requests, responses, notifications, content variants, tool calls, errors. Forward-compatible `unknown` buckets on every public union so newer peers don't crash older clients.
 - [`acp`](./src/acp/) — Synchronous `Connection`, vtable-based `Transport`, comptime-typed `Dispatcher`, `Session` state machine, capability negotiation, fixed-capacity trace ring buffer.
-- [`acp-async`](./src/acp-async/) — Newline-delimited framer, `BufferPair` deterministic test transport, `FileTransport` over `std.Io.File`, subprocess `Child` spawn.
+- [`acp-async`](./src/acp-async/) — Newline-delimited framer, `BufferPair` deterministic test transport, `FileTransport` over `std.Io.File`, `StdioTransport` (pollable, for a process serving ACP on its own stdio), subprocess `Child` spawn.
 
 **Proxy orchestration**
 

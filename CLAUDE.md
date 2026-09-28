@@ -36,7 +36,7 @@ Strictly layered; each package is `src/<name>/` with a `root.zig` barrel.
 
 - `src/acp-schema/` — wire types, JSON codec, unstable surfaces. Receives `build_options`.
 - `src/acp/` — `Connection`, vtable `Transport`, comptime `Dispatcher`, `Session`, `TraceBuffer`, and the single `AcpError` set.
-- `src/acp-async/` — newline framer, `BufferPair`, `FileTransport`, subprocess `Child`.
+- `src/acp-async/` — newline framer, `BufferPair`, `FileTransport`, `StdioTransport` (a reader task queues frames so a blocked handler can poll mid-turn), subprocess `Child`.
 - `src/acp-conductor/` — interceptor chain (pass / short-circuit / drop).
 - `src/acp-test/` — `PipePair` in-memory transport + `contract_handshake.zig`.
 - `src/yopo/main.zig` — reference agent; the executable contract spec.
@@ -72,7 +72,7 @@ Do not hand-edit: `zig-pkg/`, `.zig-cache/`, `zig-out/` (all generated, all giti
 
 ## Not yet implemented
 
-- **No real stdio transport in the public API.** The cookbook examples and `yopo` all run over an in-memory `PipePair`; `src/acp-cookbook/minimal_client.zig` says as much. Don't assume a process-to-process path exists.
+- **The cookbook and `yopo` still run over an in-memory `PipePair`.** The process-to-process path is `StdioTransport`, exercised by its own tests against a real `/bin/cat` and by `../zigagent`'s `zagent --acp=<agent>`; nothing in this repo's binaries uses it yet.
 - No web console — `make demo` runs the cookbook binaries, not a server.
 - No `.claude/rules/`, skills, or hooks configured.
 - Public API is unstable until tagged; wire format is already canonical.

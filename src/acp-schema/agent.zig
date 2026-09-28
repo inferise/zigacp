@@ -123,6 +123,46 @@ pub const NewSessionRequest = struct {
 
 pub const NewSessionResponse = struct {
     sessionId: SessionId,
+    /// The modes the session can run in and which is current; null when the agent has none.
+    modes: ?SessionModeState = null,
+    /// Settings the client may change mid-session, such as the model; null when there are none.
+    configOptions: ?[]const SessionConfigOption = null,
+};
+
+/// One mode an agent can run a session in, such as "plan" or "accept edits".
+pub const SessionMode = struct {
+    id: []const u8,
+    name: []const u8,
+    description: ?[]const u8 = null,
+};
+
+/// The modes a session offers and the one it is in.
+pub const SessionModeState = struct {
+    currentModeId: []const u8,
+    availableModes: []const SessionMode,
+};
+
+/// One value a select-type config option can take.
+pub const SessionConfigSelectOption = struct {
+    value: []const u8,
+    name: []const u8,
+    description: ?[]const u8 = null,
+};
+
+/// A session setting the client can change, such as the model.
+///
+/// ACP v1 also defines a `boolean` shape and grouped select options; only the
+/// ungrouped `select` shape is modelled, which is every option a harness here
+/// offers. `category` is an open string (`mode`, `model`, `model_config`,
+/// `thought_level`, or anything else).
+pub const SessionConfigOption = struct {
+    id: []const u8,
+    name: []const u8,
+    description: ?[]const u8 = null,
+    category: ?[]const u8 = null,
+    type: []const u8 = "select",
+    currentValue: []const u8,
+    options: []const SessionConfigSelectOption,
 };
 
 pub const method_session_load: []const u8 = "session/load";
@@ -133,7 +173,10 @@ pub const LoadSessionRequest = struct {
     mcpServers: ?[]const McpServerConfig = null,
 };
 
-pub const LoadSessionResponse = struct {};
+pub const LoadSessionResponse = struct {
+    modes: ?SessionModeState = null,
+    configOptions: ?[]const SessionConfigOption = null,
+};
 
 pub const method_session_prompt: []const u8 = "session/prompt";
 
@@ -206,11 +249,38 @@ pub const method_session_set_config_option: []const u8 = "session/set_config_opt
 
 pub const SetConfigOptionRequest = struct {
     sessionId: SessionId,
-    name: []const u8,
+    configId: []const u8,
     value: @import("serde_util.zig").RawValue,
 };
 
-pub const SetConfigOptionResponse = struct {};
+/// Every option after the change: setting one may change others (a model
+/// switch can narrow the thought levels on offer).
+pub const SetConfigOptionResponse = struct {
+    configOptions: ?[]const SessionConfigOption = null,
+};
+
+/// A command the agent accepts in a prompt, such as `/compact`.
+pub const AvailableCommand = struct {
+    name: []const u8,
+    description: []const u8,
+    /// The command's input hint, passed through untouched; its shape is still moving upstream.
+    input: ?@import("serde_util.zig").RawValue = null,
+};
+
+/// A session's token occupancy and, optionally, what it has cost so far.
+pub const UsageUpdate = struct {
+    /// Tokens currently in context.
+    used: u64,
+    /// The context window's size in tokens.
+    size: u64,
+    cost: ?Cost = null,
+
+    pub const Cost = struct {
+        amount: f64,
+        /// ISO 4217, e.g. "USD".
+        currency: []const u8,
+    };
+};
 
 // session/update is a notification streamed from agent → client during a
 // prompt. Each update has a `sessionId` plus a tagged `update` payload
@@ -227,6 +297,11 @@ pub const SessionUpdate = union(enum) {
     tool_call: ToolCall,
     tool_call_update: ToolCallUpdate,
     plan: PlanWrapper,
+    available_commands_update: AvailableCommandsUpdate,
+    current_mode_update: CurrentModeUpdate,
+    config_option_update: ConfigOptionUpdate,
+    session_info_update: SessionInfoUpdate,
+    usage_update: UsageUpdate,
     /// Forward-compat: unknown variants from peers running newer revisions.
     unknown: @import("serde_util.zig").RawValue,
 
@@ -238,6 +313,23 @@ pub const SessionUpdate = union(enum) {
         plan: Plan,
     };
 
+    pub const AvailableCommandsUpdate = struct {
+        availableCommands: []const AvailableCommand,
+    };
+
+    pub const CurrentModeUpdate = struct {
+        currentModeId: []const u8,
+    };
+
+    pub const ConfigOptionUpdate = struct {
+        configOptions: []const SessionConfigOption,
+    };
+
+    pub const SessionInfoUpdate = struct {
+        title: ?[]const u8 = null,
+        updatedAt: ?[]const u8 = null,
+    };
+
     pub fn jsonStringify(self: SessionUpdate, jw: anytype) !void {
         switch (self) {
             .user_message_chunk => |c| try writeChunk(jw, "user_message_chunk", c.content),
@@ -246,6 +338,11 @@ pub const SessionUpdate = union(enum) {
             .tool_call => |t| try writeFlat(jw, "tool_call", t),
             .tool_call_update => |t| try writeFlat(jw, "tool_call_update", t),
             .plan => |p| try writePlan(jw, p.plan),
+            .available_commands_update => |u| try writeFlat(jw, "available_commands_update", u),
+            .current_mode_update => |u| try writeFlat(jw, "current_mode_update", u),
+            .config_option_update => |u| try writeFlat(jw, "config_option_update", u),
+            .session_info_update => |u| try writeFlat(jw, "session_info_update", u),
+            .usage_update => |u| try writeFlat(jw, "usage_update", u),
             .unknown => |raw| try jw.write(raw),
         }
     }
@@ -326,6 +423,21 @@ pub const SessionUpdate = union(enum) {
                 break :blk m;
             } }, options);
             return .{ .plan = .{ .plan = plan } };
+        }
+
+        // The flat variants: every field but the tag belongs to the payload.
+        inline for (.{
+            .{ "available_commands_update", AvailableCommandsUpdate },
+            .{ "current_mode_update", CurrentModeUpdate },
+            .{ "config_option_update", ConfigOptionUpdate },
+            .{ "session_info_update", SessionInfoUpdate },
+            .{ "usage_update", UsageUpdate },
+        }) |variant| {
+            if (std.mem.eql(u8, tag, variant[0])) {
+                const inner = try stripTag(allocator, source);
+                const payload = try std.json.parseFromValueLeaky(variant[1], allocator, inner, options);
+                return @unionInit(SessionUpdate, variant[0], payload);
+            }
         }
 
         return .{ .unknown = .{ .value = source } };
@@ -537,6 +649,52 @@ test "SessionNotification carries session id and update" {
     defer parsed.deinit();
     try std.testing.expectEqualStrings("s1", parsed.value.sessionId.value);
     try std.testing.expect(parsed.value.update == .agent_message_chunk);
+}
+
+test "NewSessionResponse carries modes and a model option" {
+    const src =
+        \\{"sessionId":"s1","modes":{"currentModeId":"default","availableModes":[{"id":"default","name":"Default"},{"id":"plan","name":"Plan","description":"Read-only"}]},
+        \\ "configOptions":[{"id":"model","name":"Model","category":"model","type":"select","currentValue":"sonnet","options":[{"value":"sonnet","name":"Sonnet"},{"value":"opus","name":"Opus"}]}]}
+    ;
+    const parsed = try std.json.parseFromSlice(NewSessionResponse, std.testing.allocator, src, .{});
+    defer parsed.deinit();
+    try std.testing.expectEqualStrings("default", parsed.value.modes.?.currentModeId);
+    try std.testing.expectEqualStrings("Read-only", parsed.value.modes.?.availableModes[1].description.?);
+    try std.testing.expectEqualStrings("model", parsed.value.configOptions.?[0].category.?);
+    try std.testing.expectEqualStrings("opus", parsed.value.configOptions.?[0].options[1].value);
+}
+
+test "SessionUpdate decodes the stable v1 status variants" {
+    const cases = [_]struct { src: []const u8, tag: std.meta.Tag(SessionUpdate) }{
+        .{ .src = "{\"sessionUpdate\":\"current_mode_update\",\"currentModeId\":\"plan\"}", .tag = .current_mode_update },
+        .{ .src = "{\"sessionUpdate\":\"available_commands_update\",\"availableCommands\":[{\"name\":\"compact\",\"description\":\"Summarise the context\"}]}", .tag = .available_commands_update },
+        .{ .src = "{\"sessionUpdate\":\"usage_update\",\"used\":53000,\"size\":200000,\"cost\":{\"amount\":0.06,\"currency\":\"USD\"}}", .tag = .usage_update },
+        .{ .src = "{\"sessionUpdate\":\"session_info_update\",\"title\":\"Fix the build\"}", .tag = .session_info_update },
+        .{ .src = "{\"sessionUpdate\":\"config_option_update\",\"configOptions\":[]}", .tag = .config_option_update },
+    };
+    for (cases) |case| {
+        const parsed = try std.json.parseFromSlice(SessionUpdate, std.testing.allocator, case.src, .{});
+        defer parsed.deinit();
+        try std.testing.expectEqual(case.tag, std.meta.activeTag(parsed.value));
+    }
+}
+
+test "usage_update round-trips flat, omitting an absent cost" {
+    const u: SessionUpdate = .{ .usage_update = .{ .used = 53000, .size = 200000 } };
+    const out = try std.json.Stringify.valueAlloc(std.testing.allocator, u, .{});
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("{\"sessionUpdate\":\"usage_update\",\"used\":53000,\"size\":200000}", out);
+
+    const back = try std.json.parseFromSlice(SessionUpdate, std.testing.allocator, out, .{});
+    defer back.deinit();
+    try std.testing.expectEqual(@as(u64, 200000), back.value.usage_update.size);
+}
+
+test "current_mode_update stringifies with its tag" {
+    const u: SessionUpdate = .{ .current_mode_update = .{ .currentModeId = "plan" } };
+    const out = try std.json.Stringify.valueAlloc(std.testing.allocator, u, .{});
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("{\"sessionUpdate\":\"current_mode_update\",\"currentModeId\":\"plan\"}", out);
 }
 
 test "SetModeRequest" {
