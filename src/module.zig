@@ -18,7 +18,9 @@
 //! are not re-exported: nothing downstream uses them.
 //!
 //! Beside the re-exports, the barrel holds shared implementations that sit
-//! above the protocol: `acp.Client.Fs` serves the client's filesystem methods.
+//! above the protocol: `acp.Client.Fs` serves the client's filesystem methods,
+//! `acp.Client.Terminal` its terminal methods, and `acp.Meta` names the `_meta`
+//! fields more than one harness honours.
 //!
 //! Only what is consumed is listed. A new consumer adds the symbol here rather
 //! than importing the underlying module beside the barrel.
@@ -120,8 +122,30 @@ pub const Client = struct {
     pub const ReleaseTerminalRequest = schema.client.ReleaseTerminalRequest;
     pub const ReleaseTerminalResponse = schema.client.ReleaseTerminalResponse;
 
+    pub const TerminalEnv = schema.client.TerminalEnv;
+    pub const TerminalExitStatus = schema.client.TerminalExitStatus;
+
     /// Serves `fs/read_text_file` and `fs/write_text_file` on a client's dispatcher.
     pub const Fs = @import("client_fs.zig").ClientFs;
+    /// Serves the five `terminal/*` methods on a client's dispatcher, over plain pipes.
+    pub const Terminal = @import("client_terminal.zig").ClientTerminal;
+};
+
+// -----------------------------------------------------------------------------
+// `_meta` keys shared across harnesses
+
+/// Names of `_meta` fields more than one harness honours.
+///
+/// ACP reserves `_meta` for extensions, and a harness namespaces its own under
+/// its name (`_meta.zigafm.replaces`). A field meant to work the same against
+/// every harness is not namespaced, and its name lives here so a client and
+/// each agent spell it identically.
+pub const Meta = struct {
+    /// `session/new._meta.instructions`: standing instructions for the session,
+    /// as a string. Privileged relative to prompts, so a client never puts
+    /// user-supplied text in it. A harness that cannot apply instructions
+    /// ignores the field rather than failing the request.
+    pub const instructions = "instructions";
 };
 
 // -----------------------------------------------------------------------------
@@ -148,5 +172,67 @@ test {
     std.testing.refAllDecls(@This());
     std.testing.refAllDecls(Agent);
     std.testing.refAllDecls(Client);
+    std.testing.refAllDecls(Meta);
     if (schema.unstable_session.close_enabled) std.testing.refAllDecls(SessionClose);
+}
+
+/// The agent side of the id-collision test: answers `ping` only after asking
+/// the client something of its own, with the same request id.
+const EchoFirst = struct {
+    const Self = @This();
+
+    connection: *Connection,
+
+    fn onRequest(ctx: *anyopaque, allocator: std.mem.Allocator, method: []const u8, params: std.json.Value) AcpError!std.json.Value {
+        _ = params;
+        const self: *Self = @ptrCast(@alignCast(ctx));
+        if (!std.mem.eql(u8, method, "ping")) return error.MethodNotFound;
+        // Both connections are fresh, so this request is id 1 — the same id
+        // as the `ping` the client is still waiting on.
+        const answer = try self.connection.request(struct { ok: bool }, "question", .{});
+        defer answer.deinit();
+        return std.json.parseFromSliceLeaky(std.json.Value, allocator, "{\"pong\":true}", .{}) catch error.OutOfMemory;
+    }
+
+    fn serve(connection: *Connection, failure: *?AcpError) void {
+        connection.serve() catch |err| {
+            failure.* = err;
+        };
+    }
+};
+
+/// The client side: answers the agent's `question`.
+fn answerQuestion(ctx: *anyopaque, allocator: std.mem.Allocator, method: []const u8, params: std.json.Value) AcpError!std.json.Value {
+    _ = ctx;
+    _ = params;
+    if (!std.mem.eql(u8, method, "question")) return error.MethodNotFound;
+    return std.json.parseFromSliceLeaky(std.json.Value, allocator, "{\"ok\":true}", .{}) catch error.OutOfMemory;
+}
+
+test "a peer's request that shares our pending id is served, not taken for the answer" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+
+    const pair = try FrameTransport.init(allocator, io);
+    defer pair.deinit();
+
+    var agent = Connection.init(allocator, pair.agentTransport());
+    var echo = EchoFirst{ .connection = &agent };
+    agent.setRequestHandler(.{ .ptr = &echo, .vtable = &.{ .handle = EchoFirst.onRequest } });
+
+    var client = Connection.init(allocator, pair.clientTransport());
+    var unused: u8 = 0;
+    client.setRequestHandler(.{ .ptr = &unused, .vtable = &.{ .handle = answerQuestion } });
+
+    var failure: ?AcpError = null;
+    var serving: std.Io.Group = .init;
+    try serving.concurrent(io, EchoFirst.serve, .{ &agent, &failure });
+
+    const answer = try client.request(struct { pong: bool }, "ping", .{});
+    defer answer.deinit();
+    try std.testing.expect(answer.value.pong);
+
+    pair.close();
+    try serving.await(io);
+    if (failure) |err| try std.testing.expectEqual(error.TransportClosed, err);
 }

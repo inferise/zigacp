@@ -112,9 +112,11 @@ pub const Connection = struct {
                 else => return error.InvalidMessage,
             };
 
-            // Response to our request?
+            // Response to our request? Only a frame without a `method` can be:
+            // the two peers number their requests independently, so a request
+            // the peer sends meanwhile may carry the very id we are waiting on.
             if (obj.get("id")) |id_v| {
-                if (matchId(id_v, id)) {
+                if (obj.get("method") == null and matchId(id_v, id)) {
                     if (obj.get("error")) |err_v| {
                         log.warn("peer error: {f}", .{std.json.fmt(err_v, .{})});
                         return error.PeerError;
