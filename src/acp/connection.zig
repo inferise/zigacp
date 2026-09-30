@@ -230,21 +230,42 @@ pub const Connection = struct {
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
 
-        const result = handler.handle(arena.allocator(), method, params) catch |err| switch (err) {
-            error.MethodNotFound => {
-                try self.writeError(id_v, -32601, "method not found");
-                return;
-            },
-            error.InvalidParams => {
-                try self.writeError(id_v, -32602, "invalid params");
-                return;
-            },
-            else => {
-                try self.writeError(id_v, -32603, "internal error");
-                return;
-            },
+        const result = handler.handle(arena.allocator(), method, params) catch |err| {
+            const reply = errorReply(err);
+            try self.writeError(id_v, reply.code, reply.message);
+            return;
         };
         try self.writeResult(id_v, result);
+    }
+
+    /// A JSON-RPC error, as a handler's failure is answered.
+    pub const ErrorReply = struct {
+        code: i32,
+        message: []const u8,
+    };
+
+    /// Code for a request to a session whose agent has exited — distinct so a host can offer to start it again
+    /// rather than read it as a request it got wrong. In the implementation-defined server range.
+    pub const code_agent_gone: i32 = -32010;
+
+    /// Code for a session id nothing answers to — ACP's `resource_not_found`.
+    pub const code_resource_not_found: i32 = -32002;
+
+    /// What a handler's failure is answered with: its own code and a message saying what went wrong, so a host can
+    /// tell a request it got wrong from an agent that has gone.
+    ///
+    /// Parameters:
+    /// - `err`: the handler's error.
+    ///
+    /// Return: the code and message to send.
+    pub fn errorReply(err: anyerror) ErrorReply {
+        return switch (err) {
+            error.MethodNotFound => .{ .code = -32601, .message = "method not found" },
+            error.InvalidParams => .{ .code = -32602, .message = "invalid params" },
+            error.SessionNotFound => .{ .code = code_resource_not_found, .message = "session not found" },
+            error.AgentGone => .{ .code = code_agent_gone, .message = "the agent is not running" },
+            else => .{ .code = -32603, .message = "internal error" },
+        };
     }
 
     fn dispatchNotification(self: *Connection, method: []const u8, params: std.json.Value) AcpError!void {
@@ -290,4 +311,12 @@ fn matchId(v: std.json.Value, id: i64) bool {
 
 comptime {
     _ = schema;
+}
+
+test "a handler's failure is answered with its own code and a message that says what went wrong" {
+    try std.testing.expectEqual(@as(i32, -32602), Connection.errorReply(error.InvalidParams).code);
+    try std.testing.expectEqual(Connection.code_agent_gone, Connection.errorReply(error.AgentGone).code);
+    try std.testing.expectEqualStrings("the agent is not running", Connection.errorReply(error.AgentGone).message);
+    try std.testing.expectEqual(Connection.code_resource_not_found, Connection.errorReply(error.SessionNotFound).code);
+    try std.testing.expectEqual(@as(i32, -32603), Connection.errorReply(error.OutOfMemory).code);
 }
