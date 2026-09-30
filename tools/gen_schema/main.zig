@@ -9,6 +9,7 @@
 
 const std = @import("std");
 const schema = @import("acp-schema");
+const zigstorage = @import("zigstorage");
 
 const log = std.log.scoped(.gen_schema);
 
@@ -47,11 +48,47 @@ pub fn main(init: std.process.Init) !void {
     const bytes = out.written();
     const io = init.io;
     if (out_path) |p| {
-        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = p, .data = bytes });
+        try writeCatalog(allocator, io, init.minimal.environ, p, bytes);
         log.info("wrote schema catalog to {s} ({d} bytes)", .{ p, bytes.len });
     } else {
         try std.Io.File.stdout().writeStreamingAll(io, bytes);
     }
+}
+
+/// Writes the catalog to a file, replacing it atomically and creating missing parents.
+///
+/// Parameters:
+/// - `allocator`: backs the URL and the storage node; nothing outlives the call.
+/// - `io`: IO capability for the write.
+/// - `environ`: process environment, handed to the storage node.
+/// - `path`: the destination, relative to the working directory or absolute.
+/// - `bytes`: the catalog.
+///
+/// Return: nothing; propagates working-directory, allocation and storage failures.
+fn writeCatalog(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, path: []const u8, bytes: []const u8) !void {
+    log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+    // Joined rather than resolved, so a `..` is left for the filesystem to follow.
+    const absolute = if (std.fs.path.isAbsolute(path)) try allocator.dupe(u8, path) else blk: {
+        const cwd = try std.process.currentPathAlloc(io, allocator);
+        defer allocator.free(cwd);
+        break :blk try std.fs.path.join(allocator, &.{ cwd, path });
+    };
+    defer allocator.free(absolute);
+
+    // Percent-encoded by zigstorage's own rule, so any character in a name
+    // reaches the filesystem as written; a drive-rooted path needs the third slash.
+    var url: std.Io.Writer.Allocating = .init(allocator);
+    defer url.deinit();
+    try url.writer.writeAll(if (std.mem.startsWith(u8, absolute, "/")) "file://" else "file:///");
+    try zigstorage.NodeUrl.encodePath(&url.writer, absolute);
+
+    var node = try zigstorage.Node.init(allocator, io, environ, url.written());
+    defer node.deinit();
+    try node.open();
+    errdefer node.close();
+    try node.append(bytes);
+    try node.save();
 }
 
 fn emitRoot(ws: *std.json.Stringify) !void {

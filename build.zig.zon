@@ -1,10 +1,14 @@
 .{
     .name = .zigacp,
     .description = "Zig ACP Module",
-    .version = "1.0.4",
+    .version = "1.0.5",
     .fingerprint = 0x7e68bdcdb9528453,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
+        .zigstorage = .{
+            .path = "../zigstorage",
+            .clone = "git@github.com:inferise/zigstorage.git",
+        },
         .zigvaxis = .{
             .path = "../zigvaxis",
             .clone = "git@github.com:inferise/zigvaxis.git",

@@ -11,6 +11,7 @@
 
 const std = @import("std");
 const vaxis = @import("vaxis");
+const zigstorage = @import("zigstorage");
 
 const Event = union(enum) {
     key_press: vaxis.Key,
@@ -33,7 +34,7 @@ pub fn main(init: std.process.Init) !void {
     _ = args_it.next();
     const path = args_it.next() orelse std.process.exit(2);
 
-    const entries = try loadTrace(alloc, io, path);
+    const entries = try loadTrace(alloc, io, init.minimal.environ, path);
     defer freeTrace(alloc, entries);
 
     var buffer: [1024]u8 = undefined;
@@ -70,20 +71,19 @@ pub fn main(init: std.process.Init) !void {
     }
 }
 
-fn loadTrace(alloc: std.mem.Allocator, io: std.Io, path: []const u8) ![]Entry {
-    const file = try std.Io.Dir.cwd().openFile(io, path, .{});
-    defer file.close(io);
+fn loadTrace(alloc: std.mem.Allocator, io: std.Io, environ: std.process.Environ, path: []const u8) ![]Entry {
+    const url = try fileUrlOwned(alloc, io, path);
+    defer alloc.free(url);
 
-    var read_buf: [4096]u8 = undefined;
-    var reader = file.reader(io, &read_buf);
-    var content: std.ArrayList(u8) = .empty;
-    defer content.deinit(alloc);
-    try reader.interface.appendRemainingUnlimited(alloc, &content);
+    var node = try zigstorage.Node.init(alloc, io, environ, url);
+    defer node.deinit();
+    const content = try node.read(.all);
+    defer alloc.free(content);
 
     var entries: std.ArrayList(Entry) = .empty;
     errdefer freeTrace(alloc, entries.items);
 
-    var it = std.mem.splitScalar(u8, content.items, '\n');
+    var it = std.mem.splitScalar(u8, content, '\n');
     while (it.next()) |line| {
         if (line.len < 2) continue;
         const dir: Direction = switch (line[0]) {
@@ -96,6 +96,32 @@ fn loadTrace(alloc: std.mem.Allocator, io: std.Io, path: []const u8) ![]Entry {
         try entries.append(alloc, .{ .direction = dir, .bytes = owned });
     }
     return entries.toOwnedSlice(alloc);
+}
+
+/// Spells a filesystem path as a `file://` URL, anchoring a relative one at the working directory.
+///
+/// Parameters:
+/// - `alloc`: owns the returned URL.
+/// - `io`: IO capability for reading the working directory.
+/// - `path`: the path, relative or absolute.
+///
+/// Return: the URL, caller-owned; propagates working-directory and allocation failures.
+fn fileUrlOwned(alloc: std.mem.Allocator, io: std.Io, path: []const u8) ![]u8 {
+    // Joined rather than resolved, so a `..` is left for the filesystem to follow.
+    const absolute = if (std.fs.path.isAbsolute(path)) try alloc.dupe(u8, path) else blk: {
+        const cwd = try std.process.currentPathAlloc(io, alloc);
+        defer alloc.free(cwd);
+        break :blk try std.fs.path.join(alloc, &.{ cwd, path });
+    };
+    defer alloc.free(absolute);
+
+    // Percent-encoded by zigstorage's own rule, so any character in a name
+    // reaches the filesystem as written; a drive-rooted path needs the third slash.
+    var out: std.Io.Writer.Allocating = .init(alloc);
+    errdefer out.deinit();
+    try out.writer.writeAll(if (std.mem.startsWith(u8, absolute, "/")) "file://" else "file:///");
+    try zigstorage.NodeUrl.encodePath(&out.writer, absolute);
+    return out.toOwnedSlice();
 }
 
 fn freeTrace(alloc: std.mem.Allocator, entries: []Entry) void {

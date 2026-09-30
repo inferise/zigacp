@@ -138,6 +138,11 @@ pub fn build(b: *std.Build) void {
     });
     acp_conductor.addImport("acp", acp);
 
+    // Disk I/O goes through `zigstorage`. Requested with exactly the options
+    // every other consumer passes — target and optimize, nothing else — or the
+    // harnesses linking both would mint a second copy.
+    const zigstorage_module = b.dependency("zigstorage", .{ .target = target, .optimize = optimize }).module("zigstorage");
+
     // The barrel: one flat namespace over the three modules the harnesses
     // consume. See `src/module.zig` for the naming convention.
     const zigacp = b.addModule("zigacp", .{
@@ -148,6 +153,7 @@ pub fn build(b: *std.Build) void {
     zigacp.addImport("acp", acp);
     zigacp.addImport("acp-schema", schema);
     zigacp.addImport("acp-async", acp_async);
+    zigacp.addImport("zigstorage", zigstorage_module);
 
     const test_step = b.step("test", "Run unit tests");
 
@@ -231,6 +237,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     gen_schema_module.addImport("acp-schema", schema);
+    gen_schema_module.addImport("zigstorage", zigstorage_module);
 
     const gen_schema_exe = b.addExecutable(.{
         .name = "gen-schema",
@@ -286,6 +293,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     trace_viewer_module.addImport("vaxis", vaxis_module);
+    trace_viewer_module.addImport("zigstorage", zigstorage_module);
 
     const trace_viewer_exe = b.addExecutable(.{
         .name = "acp-trace-viewer",
