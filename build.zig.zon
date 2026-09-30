@@ -1,23 +1,17 @@
 .{
     .name = .zigacp,
     .description = "Zig ACP Module",
-    .version = "1.0.1",
+    .version = "1.0.2",
     .fingerprint = 0x7e68bdcdb9528453,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
-        .zigvaxis_local = .{
-            .path = "../zigvaxis",
-            .lazy = true,
-        },
         .zigvaxis = .{
-            .url = "git+https://github.com/inferise/zigvaxis#f37c42a3b324131c131d066767968e1f5b976453",
-            .hash = "vaxis-0.6.0-BWNV_AIQDADLTDo5jCn27pBWJBvi-sTrSkSKwITQWgUV",
-            .lazy = true,
+            .path = "../zigvaxis",
+            .clone = "git@github.com:inferise/zigvaxis.git",
         },
     },
     .paths = .{
         "build.zig",
-        "build.deps.zig",
         "build.zig.zon",
         "src",
         "tools",

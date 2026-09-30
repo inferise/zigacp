@@ -1,5 +1,4 @@
 const std = @import("std");
-const deps = @import("build.deps.zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -188,23 +187,22 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs", "Emit API documentation to zig-out/docs");
     docs_step.dependOn(&install_docs.step);
 
-    if (deps.resolveModule(b, "zigvaxis", target, optimize)) |vaxis_module| {
-        const trace_viewer_module = b.createModule(.{
-            .root_source_file = b.path("src/acp-trace-viewer/main.zig"),
-            .target = target,
-            .optimize = optimize,
-        });
-        trace_viewer_module.addImport("vaxis", vaxis_module);
+    const vaxis_module = b.dependency("zigvaxis", .{ .target = target, .optimize = optimize }).module("zigvaxis");
+    const trace_viewer_module = b.createModule(.{
+        .root_source_file = b.path("src/acp-trace-viewer/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    trace_viewer_module.addImport("vaxis", vaxis_module);
 
-        const trace_viewer_exe = b.addExecutable(.{
-            .name = "acp-trace-viewer",
-            .root_module = trace_viewer_module,
-        });
-        b.installArtifact(trace_viewer_exe);
+    const trace_viewer_exe = b.addExecutable(.{
+        .name = "acp-trace-viewer",
+        .root_module = trace_viewer_module,
+    });
+    b.installArtifact(trace_viewer_exe);
 
-        const viewer_step = b.step("trace-viewer", "Build the interactive trace viewer");
-        viewer_step.dependOn(&trace_viewer_exe.step);
-    }
+    const viewer_step = b.step("trace-viewer", "Build the interactive trace viewer");
+    viewer_step.dependOn(&trace_viewer_exe.step);
 }
 
 const UnstableFlags = struct {
