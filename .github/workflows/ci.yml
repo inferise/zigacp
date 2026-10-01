@@ -45,4 +45,5 @@ jobs:
             -Dunstable_elicitation=true \
             -Dunstable_nes=true \
             -Dunstable_cancel_request=true \
+            -Dunstable_session_usage=true \
             --summary all

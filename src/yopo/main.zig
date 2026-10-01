@@ -64,7 +64,7 @@ const Agent = struct {
             self.agent.next_session += 1;
             const sess = try self.agent.sessions.create(.{ .value = id_str }, params.cwd);
             try sess.markInitialized();
-            return .{ .sessionId = sess.id };
+            return .{ .session_id = sess.id };
         }
     };
 
@@ -190,9 +190,9 @@ fn driveContract(client: *acp.Connection, agent: *acp.Connection) !void {
             params,
         );
         defer resp.deinit();
-        const len = resp.value.sessionId.value.len;
+        const len = resp.value.session_id.value.len;
         if (len == 0 or len > session_id_buf.len) return error.UnexpectedSessionId;
-        @memcpy(session_id_buf[0..len], resp.value.sessionId.value);
+        @memcpy(session_id_buf[0..len], resp.value.session_id.value);
         break :blk session_id_buf[0..len];
     };
 

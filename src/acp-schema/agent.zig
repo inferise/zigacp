@@ -5,11 +5,8 @@
 //! method groups (session/*, terminal/*, etc.) iteratively.
 
 const std = @import("std");
-const ProtocolVersion = @import("version.zig").ProtocolVersion;
-const ContentBlock = @import("content.zig").ContentBlock;
-const Plan = @import("plan.zig").Plan;
-const ToolCall = @import("tool_call.zig").ToolCall;
-const ToolCallUpdate = @import("tool_call.zig").ToolCallUpdate;
+const log = std.log.scoped(.acp_schema_agent);
+const mod = @import("module.zig");
 
 // ---------------------------------------------------------------------------
 // initialize
@@ -43,12 +40,12 @@ pub const AgentCapabilities = struct {
 /// First request a client sends. The agent replies with the highest version
 /// it speaks plus its capability set.
 pub const InitializeRequest = struct {
-    protocolVersion: ProtocolVersion,
+    protocolVersion: mod.ProtocolVersion,
     clientCapabilities: ?ClientCapabilities = null,
 };
 
 pub const InitializeResponse = struct {
-    protocolVersion: ProtocolVersion,
+    protocolVersion: mod.ProtocolVersion,
     agentCapabilities: ?AgentCapabilities = null,
     authMethods: ?[]const AuthMethod = null,
 };
@@ -101,28 +98,62 @@ pub const SessionId = struct {
     }
 };
 
-/// External MCP server the client wants the agent to bridge into the session.
-pub const McpServerConfig = struct {
-    name: []const u8,
-    command: []const u8,
-    args: ?[]const []const u8 = null,
-    env: ?[]const McpEnv = null,
-
-    pub const McpEnv = struct {
-        name: []const u8,
-        value: []const u8,
-    };
-};
-
 pub const method_session_new: []const u8 = "session/new";
 
 pub const NewSessionRequest = struct {
     cwd: []const u8,
-    mcpServers: ?[]const McpServerConfig = null,
+    mcpServers: ?[]const mod.McpServerConfig = null,
 };
 
 pub const NewSessionResponse = struct {
-    sessionId: SessionId,
+    const Self = @This();
+
+    session_id: SessionId,
+    /// The modes the session can run in and which is current; null when the agent has none.
+    modes: ?mod.SessionModeState = null,
+    /// Settings the client may change mid-session, such as the model; null when there are none.
+    config_options: ?[]const mod.SessionConfigOption = null,
+
+    /// Writes the struct under its camelCase wire keys.
+    ///
+    /// Parameters:
+    /// - `self`: the struct.
+    /// - `jw`: the JSON writer.
+    ///
+    /// Return: nothing; propagates the writer's failure.
+    pub fn jsonStringify(self: *const Self, jw: anytype) !void {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        try mod.WireCase.stringify(Self, self, jw);
+    }
+
+    /// Parses the struct from a token stream keyed by wire names.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns everything parsed.
+    /// - `source`: the token stream.
+    /// - `options`: the caller's parse options.
+    ///
+    /// Return: the struct; propagates a parse failure.
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Self {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        return mod.WireCase.parse(Self, allocator, source, options);
+    }
+
+    /// Parses the struct from a JSON value keyed by wire names.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns everything parsed.
+    /// - `source`: the JSON value.
+    /// - `options`: the caller's parse options.
+    ///
+    /// Return: the struct; propagates a parse failure.
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Self {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        return mod.WireCase.parseFromValue(Self, allocator, source, options);
+    }
 };
 
 pub const method_session_load: []const u8 = "session/load";
@@ -130,16 +161,62 @@ pub const method_session_load: []const u8 = "session/load";
 pub const LoadSessionRequest = struct {
     sessionId: SessionId,
     cwd: []const u8,
-    mcpServers: ?[]const McpServerConfig = null,
+    mcpServers: ?[]const mod.McpServerConfig = null,
 };
 
-pub const LoadSessionResponse = struct {};
+pub const LoadSessionResponse = struct {
+    const Self = @This();
+
+    modes: ?mod.SessionModeState = null,
+    config_options: ?[]const mod.SessionConfigOption = null,
+
+    /// Writes the struct under its camelCase wire keys.
+    ///
+    /// Parameters:
+    /// - `self`: the struct.
+    /// - `jw`: the JSON writer.
+    ///
+    /// Return: nothing; propagates the writer's failure.
+    pub fn jsonStringify(self: *const Self, jw: anytype) !void {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        try mod.WireCase.stringify(Self, self, jw);
+    }
+
+    /// Parses the struct from a token stream keyed by wire names.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns everything parsed.
+    /// - `source`: the token stream.
+    /// - `options`: the caller's parse options.
+    ///
+    /// Return: the struct; propagates a parse failure.
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Self {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        return mod.WireCase.parse(Self, allocator, source, options);
+    }
+
+    /// Parses the struct from a JSON value keyed by wire names.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns everything parsed.
+    /// - `source`: the JSON value.
+    /// - `options`: the caller's parse options.
+    ///
+    /// Return: the struct; propagates a parse failure.
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Self {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        return mod.WireCase.parseFromValue(Self, allocator, source, options);
+    }
+};
 
 pub const method_session_prompt: []const u8 = "session/prompt";
 
 pub const PromptRequest = struct {
     sessionId: SessionId,
-    prompt: []const ContentBlock,
+    prompt: []const mod.ContentBlock,
 };
 
 pub const PromptResponse = struct {
@@ -205,12 +282,102 @@ pub const ListSessionsResponse = struct {
 pub const method_session_set_config_option: []const u8 = "session/set_config_option";
 
 pub const SetConfigOptionRequest = struct {
-    sessionId: SessionId,
-    name: []const u8,
-    value: @import("serde_util.zig").RawValue,
+    const Self = @This();
+
+    session_id: SessionId,
+    config_id: []const u8,
+    value: mod.RawValue,
+
+    /// Writes the struct under its camelCase wire keys.
+    ///
+    /// Parameters:
+    /// - `self`: the struct.
+    /// - `jw`: the JSON writer.
+    ///
+    /// Return: nothing; propagates the writer's failure.
+    pub fn jsonStringify(self: *const Self, jw: anytype) !void {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        try mod.WireCase.stringify(Self, self, jw);
+    }
+
+    /// Parses the struct from a token stream keyed by wire names.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns everything parsed.
+    /// - `source`: the token stream.
+    /// - `options`: the caller's parse options.
+    ///
+    /// Return: the struct; propagates a parse failure.
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Self {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        return mod.WireCase.parse(Self, allocator, source, options);
+    }
+
+    /// Parses the struct from a JSON value keyed by wire names.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns everything parsed.
+    /// - `source`: the JSON value.
+    /// - `options`: the caller's parse options.
+    ///
+    /// Return: the struct; propagates a parse failure.
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Self {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        return mod.WireCase.parseFromValue(Self, allocator, source, options);
+    }
 };
 
-pub const SetConfigOptionResponse = struct {};
+/// Every option after the change: setting one may change others (a model
+/// switch can narrow the thought levels on offer).
+pub const SetConfigOptionResponse = struct {
+    const Self = @This();
+
+    config_options: ?[]const mod.SessionConfigOption = null,
+
+    /// Writes the struct under its camelCase wire keys.
+    ///
+    /// Parameters:
+    /// - `self`: the struct.
+    /// - `jw`: the JSON writer.
+    ///
+    /// Return: nothing; propagates the writer's failure.
+    pub fn jsonStringify(self: *const Self, jw: anytype) !void {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        try mod.WireCase.stringify(Self, self, jw);
+    }
+
+    /// Parses the struct from a token stream keyed by wire names.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns everything parsed.
+    /// - `source`: the token stream.
+    /// - `options`: the caller's parse options.
+    ///
+    /// Return: the struct; propagates a parse failure.
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Self {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        return mod.WireCase.parse(Self, allocator, source, options);
+    }
+
+    /// Parses the struct from a JSON value keyed by wire names.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns everything parsed.
+    /// - `source`: the JSON value.
+    /// - `options`: the caller's parse options.
+    ///
+    /// Return: the struct; propagates a parse failure.
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Self {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        return mod.WireCase.parseFromValue(Self, allocator, source, options);
+    }
+};
 
 // session/update is a notification streamed from agent → client during a
 // prompt. Each update has a `sessionId` plus a tagged `update` payload
@@ -218,136 +385,11 @@ pub const SetConfigOptionResponse = struct {};
 
 pub const method_session_update: []const u8 = "session/update";
 
-/// One streamed update emitted by the agent during a prompt. Tagged on the
-/// wire by `sessionUpdate`.
-pub const SessionUpdate = union(enum) {
-    user_message_chunk: ContentChunk,
-    agent_message_chunk: ContentChunk,
-    agent_thought_chunk: ContentChunk,
-    tool_call: ToolCall,
-    tool_call_update: ToolCallUpdate,
-    plan: PlanWrapper,
-    /// Forward-compat: unknown variants from peers running newer revisions.
-    unknown: @import("serde_util.zig").RawValue,
-
-    pub const ContentChunk = struct {
-        content: ContentBlock,
-    };
-
-    pub const PlanWrapper = struct {
-        plan: Plan,
-    };
-
-    pub fn jsonStringify(self: SessionUpdate, jw: anytype) !void {
-        switch (self) {
-            .user_message_chunk => |c| try writeChunk(jw, "user_message_chunk", c.content),
-            .agent_message_chunk => |c| try writeChunk(jw, "agent_message_chunk", c.content),
-            .agent_thought_chunk => |c| try writeChunk(jw, "agent_thought_chunk", c.content),
-            .tool_call => |t| try writeFlat(jw, "tool_call", t),
-            .tool_call_update => |t| try writeFlat(jw, "tool_call_update", t),
-            .plan => |p| try writePlan(jw, p.plan),
-            .unknown => |raw| try jw.write(raw),
-        }
-    }
-
-    fn writeChunk(jw: anytype, comptime tag: []const u8, content: ContentBlock) !void {
-        try jw.beginObject();
-        try jw.objectField("sessionUpdate");
-        try jw.write(tag);
-        try jw.objectField("content");
-        try jw.write(content);
-        try jw.endObject();
-    }
-
-    fn writeFlat(jw: anytype, comptime tag: []const u8, payload: anytype) !void {
-        try jw.beginObject();
-        try jw.objectField("sessionUpdate");
-        try jw.write(tag);
-        const T = @TypeOf(payload);
-        inline for (@typeInfo(T).@"struct".fields) |f| {
-            const v = @field(payload, f.name);
-            const skip = @typeInfo(f.type) == .optional and v == null;
-            if (!skip) {
-                try jw.objectField(f.name);
-                try jw.write(v);
-            }
-        }
-        try jw.endObject();
-    }
-
-    fn writePlan(jw: anytype, plan: Plan) !void {
-        try jw.beginObject();
-        try jw.objectField("sessionUpdate");
-        try jw.write("plan");
-        try jw.objectField("entries");
-        try jw.write(plan.entries);
-        try jw.endObject();
-    }
-
-    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !SessionUpdate {
-        const v = try std.json.innerParse(std.json.Value, allocator, source, options);
-        return jsonParseFromValue(allocator, v, options);
-    }
-
-    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !SessionUpdate {
-        if (source != .object) return error.UnexpectedToken;
-        const tag_v = source.object.get("sessionUpdate") orelse return error.MissingField;
-        if (tag_v != .string) return error.UnexpectedToken;
-        const tag = tag_v.string;
-
-        if (std.mem.eql(u8, tag, "user_message_chunk") or
-            std.mem.eql(u8, tag, "agent_message_chunk") or
-            std.mem.eql(u8, tag, "agent_thought_chunk"))
-        {
-            const content_v = source.object.get("content") orelse return error.MissingField;
-            const cb = try std.json.parseFromValueLeaky(ContentBlock, allocator, content_v, options);
-            const chunk: ContentChunk = .{ .content = cb };
-            if (std.mem.eql(u8, tag, "user_message_chunk")) return .{ .user_message_chunk = chunk };
-            if (std.mem.eql(u8, tag, "agent_message_chunk")) return .{ .agent_message_chunk = chunk };
-            return .{ .agent_thought_chunk = chunk };
-        }
-
-        if (std.mem.eql(u8, tag, "tool_call")) {
-            const inner = try stripTag(allocator, source);
-            const tc = try std.json.parseFromValueLeaky(ToolCall, allocator, inner, options);
-            return .{ .tool_call = tc };
-        }
-        if (std.mem.eql(u8, tag, "tool_call_update")) {
-            const inner = try stripTag(allocator, source);
-            const tc = try std.json.parseFromValueLeaky(ToolCallUpdate, allocator, inner, options);
-            return .{ .tool_call_update = tc };
-        }
-        if (std.mem.eql(u8, tag, "plan")) {
-            const entries_v = source.object.get("entries") orelse return error.MissingField;
-            const plan = try std.json.parseFromValueLeaky(Plan, allocator, .{ .object = blk: {
-                var m: std.json.ObjectMap = .empty;
-                try m.ensureTotalCapacity(allocator, 1);
-                m.putAssumeCapacity("entries", entries_v);
-                break :blk m;
-            } }, options);
-            return .{ .plan = .{ .plan = plan } };
-        }
-
-        return .{ .unknown = .{ .value = source } };
-    }
-};
-
 /// `session/update` notification body: a session id plus one update event.
 pub const SessionNotification = struct {
     sessionId: SessionId,
-    update: SessionUpdate,
+    update: mod.SessionUpdate,
 };
-
-fn stripTag(allocator: std.mem.Allocator, source: std.json.Value) !std.json.Value {
-    var copy: std.json.ObjectMap = .empty;
-    try copy.ensureTotalCapacity(allocator, source.object.count());
-    var it = source.object.iterator();
-    while (it.next()) |entry| {
-        if (std.mem.eql(u8, entry.key_ptr.*, "sessionUpdate")) continue;
-        copy.putAssumeCapacity(entry.key_ptr.*, entry.value_ptr.*);
-    }
-    return .{ .object = copy };
-}
 
 fn freeToken(allocator: std.mem.Allocator, token: std.json.Token) void {
     switch (token) {
@@ -402,10 +444,21 @@ test "AuthenticateRequest round-trip" {
 }
 
 test "InitializeRequest stringifies omitting null capabilities" {
-    const req: InitializeRequest = .{ .protocolVersion = ProtocolVersion.V1 };
+    const req: InitializeRequest = .{ .protocolVersion = mod.ProtocolVersion.V1 };
     const out = try std.json.Stringify.valueAlloc(std.testing.allocator, req, .{ .emit_null_optional_fields = false });
     defer std.testing.allocator.free(out);
     try std.testing.expectEqualStrings("{\"protocolVersion\":1}", out);
+}
+
+test "an HTTP MCP server parses beside a stdio one" {
+    const src =
+        \\{"cwd":"/p","mcpServers":[{"type":"http","name":"inferise","url":"http://127.0.0.1:4000/mcp","headers":[{"name":"Authorization","value":"Bearer t"}]},{"name":"git","command":"mcp-git","args":[],"env":[]}]}
+    ;
+    const parsed = try std.json.parseFromSlice(NewSessionRequest, std.testing.allocator, src, .{});
+    defer parsed.deinit();
+    const servers = parsed.value.mcpServers.?;
+    try std.testing.expectEqualStrings("Bearer t", servers[0].http.headers[0].value);
+    try std.testing.expectEqualStrings("mcp-git", servers[1].stdio.command);
 }
 
 test "NewSessionRequest with mcp servers" {
@@ -415,8 +468,8 @@ test "NewSessionRequest with mcp servers" {
     const parsed = try std.json.parseFromSlice(NewSessionRequest, std.testing.allocator, src, .{});
     defer parsed.deinit();
     try std.testing.expectEqualStrings("/home/u/proj", parsed.value.cwd);
-    try std.testing.expectEqualStrings("git", parsed.value.mcpServers.?[0].name);
-    try std.testing.expectEqualStrings("v", parsed.value.mcpServers.?[0].env.?[0].value);
+    try std.testing.expectEqualStrings("git", parsed.value.mcpServers.?[0].stdio.name);
+    try std.testing.expectEqualStrings("v", parsed.value.mcpServers.?[0].stdio.env[0].value);
 }
 
 test "NewSessionResponse session id round-trip" {
@@ -425,7 +478,7 @@ test "NewSessionResponse session id round-trip" {
     ;
     const parsed = try std.json.parseFromSlice(NewSessionResponse, std.testing.allocator, src, .{});
     defer parsed.deinit();
-    try std.testing.expectEqualStrings("sess_42", parsed.value.sessionId.value);
+    try std.testing.expectEqualStrings("sess_42", parsed.value.session_id.value);
 }
 
 test "PromptRequest with text content" {
@@ -455,80 +508,6 @@ test "CancelNotification carries session id" {
     try std.testing.expectEqualStrings("s1", parsed.value.sessionId.value);
 }
 
-test "SessionUpdate agent_message_chunk round-trip" {
-    const src =
-        \\{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hi"}}
-    ;
-    const parsed = try std.json.parseFromSlice(SessionUpdate, std.testing.allocator, src, .{});
-    defer parsed.deinit();
-    try std.testing.expect(parsed.value == .agent_message_chunk);
-    try std.testing.expect(parsed.value.agent_message_chunk.content == .text);
-}
-
-test "SessionUpdate user_message_chunk variant" {
-    const src =
-        \\{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"q?"}}
-    ;
-    const parsed = try std.json.parseFromSlice(SessionUpdate, std.testing.allocator, src, .{});
-    defer parsed.deinit();
-    try std.testing.expect(parsed.value == .user_message_chunk);
-}
-
-test "SessionUpdate agent_thought_chunk variant" {
-    const src =
-        \\{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"…"}}
-    ;
-    const parsed = try std.json.parseFromSlice(SessionUpdate, std.testing.allocator, src, .{});
-    defer parsed.deinit();
-    try std.testing.expect(parsed.value == .agent_thought_chunk);
-}
-
-test "SessionUpdate tool_call inlines fields" {
-    const src =
-        \\{"sessionUpdate":"tool_call","toolCallId":"c1","title":"reading","kind":"read","status":"pending"}
-    ;
-    const parsed = try std.json.parseFromSlice(SessionUpdate, std.testing.allocator, src, .{});
-    defer parsed.deinit();
-    try std.testing.expect(parsed.value == .tool_call);
-    try std.testing.expectEqualStrings("c1", parsed.value.tool_call.toolCallId.value);
-}
-
-test "SessionUpdate tool_call_update partial" {
-    const src =
-        \\{"sessionUpdate":"tool_call_update","toolCallId":"c1","status":"completed"}
-    ;
-    const parsed = try std.json.parseFromSlice(SessionUpdate, std.testing.allocator, src, .{});
-    defer parsed.deinit();
-    try std.testing.expect(parsed.value == .tool_call_update);
-}
-
-test "SessionUpdate plan variant" {
-    const src =
-        \\{"sessionUpdate":"plan","entries":[{"content":"step","status":"pending","priority":"medium"}]}
-    ;
-    const parsed = try std.json.parseFromSlice(SessionUpdate, std.testing.allocator, src, .{});
-    defer parsed.deinit();
-    try std.testing.expect(parsed.value == .plan);
-    try std.testing.expectEqual(@as(usize, 1), parsed.value.plan.plan.entries.len);
-}
-
-test "SessionUpdate unknown variant survives" {
-    const src =
-        \\{"sessionUpdate":"future_kind","x":1}
-    ;
-    const parsed = try std.json.parseFromSlice(SessionUpdate, std.testing.allocator, src, .{});
-    defer parsed.deinit();
-    try std.testing.expect(parsed.value == .unknown);
-}
-
-test "SessionUpdate stringifies chunk with sessionUpdate tag first" {
-    const u: SessionUpdate = .{ .agent_message_chunk = .{ .content = .{ .text = .{ .text = "hi" } } } };
-    const out = try std.json.Stringify.valueAlloc(std.testing.allocator, u, .{});
-    defer std.testing.allocator.free(out);
-    try std.testing.expect(std.mem.indexOf(u8, out, "\"sessionUpdate\":\"agent_message_chunk\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "\"text\":\"hi\"") != null);
-}
-
 test "SessionNotification carries session id and update" {
     const src =
         \\{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hi"}}}
@@ -536,7 +515,20 @@ test "SessionNotification carries session id and update" {
     const parsed = try std.json.parseFromSlice(SessionNotification, std.testing.allocator, src, .{});
     defer parsed.deinit();
     try std.testing.expectEqualStrings("s1", parsed.value.sessionId.value);
-    try std.testing.expect(parsed.value.update == .agent_message_chunk);
+    try std.testing.expect(parsed.value.update == .agentMessageChunk);
+}
+
+test "NewSessionResponse carries modes and a model option" {
+    const src =
+        \\{"sessionId":"s1","modes":{"currentModeId":"default","availableModes":[{"id":"default","name":"Default"},{"id":"plan","name":"Plan","description":"Read-only"}]},
+        \\ "configOptions":[{"id":"model","name":"Model","category":"model","type":"select","currentValue":"sonnet","options":[{"value":"sonnet","name":"Sonnet"},{"value":"opus","name":"Opus"}]}]}
+    ;
+    const parsed = try std.json.parseFromSlice(NewSessionResponse, std.testing.allocator, src, .{});
+    defer parsed.deinit();
+    try std.testing.expectEqualStrings("default", parsed.value.modes.?.current_mode_id);
+    try std.testing.expectEqualStrings("Read-only", parsed.value.modes.?.available_modes[1].description.?);
+    try std.testing.expectEqualStrings("model", parsed.value.config_options.?[0].select.category.?);
+    try std.testing.expectEqualStrings("opus", parsed.value.config_options.?[0].select.options.ungrouped[1].value);
 }
 
 test "SetModeRequest" {

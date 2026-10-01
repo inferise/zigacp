@@ -30,13 +30,14 @@ Run one test file directly: `zig test src/acp/connection.zig` won't resolve impo
 
 ## Module layout
 
-Strictly layered; each package is `src/<name>/` with a `root.zig` barrel.
+Strictly layered; each package is `src/<name>/` with a `module.zig` barrel.
 
-`acp-schema` (no deps) ← `acp` ← {`acp-async`, `acp-conductor`, `acp-test`} ← binaries.
+`acp-schema` (no deps) ← {`acp`, `acp-mcp`}; `acp` ← {`acp-async`, `acp-conductor`, `acp-test`} ← binaries.
 
 - `src/acp-schema/` — wire types, JSON codec, unstable surfaces. Receives `build_options`.
 - `src/acp/` — `Connection`, vtable `Transport`, comptime `Dispatcher`, `Session`, `TraceBuffer`, and the single `AcpError` set.
-- `src/acp-async/` — newline framer, `BufferPair`, `FileTransport`, subprocess `Child`.
+- `src/acp-async/` — newline framer, `BufferPair`, `FileTransport`, `StdioTransport` (a reader task queues frames so a blocked handler can poll mid-turn) and the `Config` it borrows, subprocess `Child`.
+- `src/acp-mcp/` — all MCP logic. Only MCP types that are part of the ACP spec (`McpServerConfig` and its shapes) live in `acp-schema`; anything that *does* something with an MCP server goes here.
 - `src/acp-conductor/` — interceptor chain (pass / short-circuit / drop).
 - `src/acp-test/` — `PipePair` in-memory transport + `contract_handshake.zig`.
 - `src/yopo/main.zig` — reference agent; the executable contract spec.
@@ -56,7 +57,8 @@ Do not hand-edit: `zig-pkg/`, `.zig-cache/`, `zig-out/` (all generated, all giti
 
 ## Project-state heads-ups
 
-- **This repo diverges from `ZIGSTYLE.md` on three structural rules, unresolved.** Barrels are named `root.zig` (B.1.a says `module.zig`); files import siblings directly, e.g. `@import("transport.zig")` in `src/acp/connection.zig` (B.4.b says go through the barrel); several files export more than one type, e.g. `src/acp-schema/agent.zig` (B.2.a says one primary struct per file). Match the surrounding code rather than "fixing" a file to the guide mid-task; raise the conflict instead.
+- **Older files still diverge from `ZIGSTYLE.md`; new and touched code must not.** Barrels are now `module.zig` everywhere (B.1.a). Many older files still import siblings directly and alias them (`const Plan = @import("plan.zig").Plan;`, against B.4.a/B.4.b), and some hold several primary types (`src/acp-schema/agent.zig`, `client.zig`, against B.2.a). Code you add or a type you change goes through `const mod = @import("module.zig");`, one primary struct per file named for it.
+- **Wire field names vs C.2.** ZIGSTYLE wants snake_case fields; ACP's JSON is camelCase. New and changed wire structs use snake_case fields and route their `jsonStringify`/`jsonParse`/`jsonParseFromValue` through `acp-schema`'s `WireCase`, which maps `config_id` ↔ `configId`. Older structs still use camelCase field names directly. `SessionUpdate` variants are camelCase in Zig (`.agentMessageChunk`) and keep their snake_case wire tags.
 - **`make lint` is clean (0 findings) — keep it that way.** It runs two tools with different output formats, so read both: `zlint` prints boxed diagnostics, `zlintpre` prints bare `file:line:col:` lines. Left to themselves both walk the whole working directory and pull in ~276 findings from the vendored `zig-pkg/` cache, so the target feeds each an explicit file list instead. Never lint or edit `zig-pkg/` — it is a regenerable dependency cache and any edit is lost on the next fetch. Neither tool exits non-zero on warnings, so `make validate` passing is not by itself proof lint is clean; read the counts.
 - `zlintpre`'s one check is "trailing comma in fn params": a trailing comma makes `zig fmt` keep a parameter list split across lines, and the tool wants it collapsed onto one line. Signatures here therefore run long (up to ~162 chars) — that is intended, and `line-length` is disabled in `styleguide/zlint.json` to match. Don't re-wrap them.
 - **`zigvaxis` is a single path dependency: `.zigvaxis = .{ .path = "../zigvaxis" }`.** `build.zig` uses `b.dependency("zigvaxis", ...).module("zigvaxis")` directly — no pinned remote, no fallback. The sibling checkout must exist at `../zigvaxis` (locally and in CI), or the build fails. Ignore the `.clone` field in `build.zig.zon`; stock Zig doesn't use it.
@@ -64,11 +66,11 @@ Do not hand-edit: `zig-pkg/`, `.zig-cache/`, `zig-out/` (all generated, all giti
 - `src/acp-trace-viewer/` is the only consumer of `zigvaxis`.
 - `README.md`'s install snippet points at `MagnovaAI/acp-zig` while `origin` is `inferise/zigacp`. Both appear in history — confirm which is intended before editing either.
 - `build.zig.zon`'s `.version` is the release source of truth; `make tag` scrapes it with `sed`.
-- CI runs the suite twice: once default, once with 8 `unstable_*` flags on. A change that only compiles with flags off will pass locally and fail in CI.
+- CI runs the suite twice: once default, once with 9 `unstable_*` flags on. A change that only compiles with flags off will pass locally and fail in CI.
 
 ## Not yet implemented
 
-- **No real stdio transport in the public API.** The cookbook examples and `yopo` all run over an in-memory `PipePair`; `src/acp-cookbook/minimal_client.zig` says as much. Don't assume a process-to-process path exists.
+- **The cookbook and `yopo` still run over an in-memory `PipePair`.** The process-to-process path is `StdioTransport`, exercised by its own tests against a real `/bin/cat` and by `../zigagent`'s `zagent --acp=<agent>`; nothing in this repo's binaries uses it yet.
 - No web console — `make demo` runs the cookbook binaries, not a server.
 - No `.claude/rules/`, skills, or hooks configured.
 - Public API is unstable until tagged; wire format is already canonical.

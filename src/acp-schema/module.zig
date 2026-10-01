@@ -52,6 +52,41 @@ pub const ToolCallContent = tool_call.ToolCallContent;
 pub const ToolCallLocation = tool_call.ToolCallLocation;
 pub const ToolCallUpdate = tool_call.ToolCallUpdate;
 
+pub const wire_case = @import("wire_case.zig");
+pub const WireCase = wire_case.WireCase;
+
+pub const mcp_server_config = @import("mcp_server_config.zig");
+pub const McpServerConfig = mcp_server_config.McpServerConfig;
+pub const McpServerStdio = mcp_server_config.McpServerStdio;
+pub const McpServerRemote = mcp_server_config.McpServerRemote;
+pub const McpEnv = mcp_server_config.McpEnv;
+
+pub const session_mode_state = @import("session_mode_state.zig");
+pub const SessionModeState = session_mode_state.SessionModeState;
+pub const SessionMode = session_mode_state.SessionMode;
+
+pub const session_config_option = @import("session_config_option.zig");
+pub const SessionConfigOption = session_config_option.SessionConfigOption;
+pub const SessionConfigSelect = session_config_option.SessionConfigSelect;
+pub const SessionConfigSelectOptions = session_config_option.SessionConfigSelectOptions;
+pub const SessionConfigSelectGroup = session_config_option.SessionConfigSelectGroup;
+pub const SessionConfigSelectOption = session_config_option.SessionConfigSelectOption;
+
+pub const available_command = @import("available_command.zig");
+pub const AvailableCommand = available_command.AvailableCommand;
+
+// Unstable: `usage_update.enabled` says whether `SessionUpdate` carries it.
+pub const usage_update = @import("usage_update.zig");
+
+pub const session_update = @import("session_update.zig");
+pub const SessionUpdate = session_update.SessionUpdate;
+pub const ContentChunk = session_update.ContentChunk;
+pub const PlanWrapper = session_update.PlanWrapper;
+pub const AvailableCommandsUpdate = session_update.AvailableCommandsUpdate;
+pub const CurrentModeUpdate = session_update.CurrentModeUpdate;
+pub const ConfigOptionUpdate = session_update.ConfigOptionUpdate;
+pub const SessionInfoUpdate = session_update.SessionInfoUpdate;
+
 pub const agent = @import("agent.zig");
 pub const client = @import("client.zig");
 

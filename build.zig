@@ -103,21 +103,21 @@ pub fn build(b: *std.Build) void {
     }
 
     const schema = b.addModule("acp-schema", .{
-        .root_source_file = b.path("src/acp-schema/root.zig"),
+        .root_source_file = b.path("src/acp-schema/module.zig"),
         .target = target,
         .optimize = optimize,
     });
     schema.addOptions("build_options", build_options);
 
     const acp = b.addModule("acp", .{
-        .root_source_file = b.path("src/acp/root.zig"),
+        .root_source_file = b.path("src/acp/module.zig"),
         .target = target,
         .optimize = optimize,
     });
     acp.addImport("acp-schema", schema);
 
     const acp_test = b.addModule("acp-test", .{
-        .root_source_file = b.path("src/acp-test/root.zig"),
+        .root_source_file = b.path("src/acp-test/module.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -125,25 +125,33 @@ pub fn build(b: *std.Build) void {
     acp_test.addImport("acp-schema", schema);
 
     const acp_async = b.addModule("acp-async", .{
-        .root_source_file = b.path("src/acp-async/root.zig"),
+        .root_source_file = b.path("src/acp-async/module.zig"),
         .target = target,
         .optimize = optimize,
     });
     acp_async.addImport("acp", acp);
 
     const acp_conductor = b.addModule("acp-conductor", .{
-        .root_source_file = b.path("src/acp-conductor/root.zig"),
+        .root_source_file = b.path("src/acp-conductor/module.zig"),
         .target = target,
         .optimize = optimize,
     });
     acp_conductor.addImport("acp", acp);
+
+    // MCP logic; the MCP wire types themselves stay in `acp-schema`.
+    const acp_mcp = b.addModule("acp-mcp", .{
+        .root_source_file = b.path("src/acp-mcp/module.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    acp_mcp.addImport("acp-schema", schema);
 
     // Disk I/O goes through `zigstorage`. Requested with exactly the options
     // every other consumer passes — target and optimize, nothing else — or the
     // harnesses linking both would mint a second copy.
     const zigstorage_module = b.dependency("zigstorage", .{ .target = target, .optimize = optimize }).module("zigstorage");
 
-    // The barrel: one flat namespace over the three modules the harnesses
+    // The barrel: one flat namespace over the four modules the harnesses
     // consume. See `src/module.zig` for the naming convention.
     const zigacp = b.addModule("zigacp", .{
         .root_source_file = b.path("src/module.zig"),
@@ -153,6 +161,7 @@ pub fn build(b: *std.Build) void {
     zigacp.addImport("acp", acp);
     zigacp.addImport("acp-schema", schema);
     zigacp.addImport("acp-async", acp_async);
+    zigacp.addImport("acp-mcp", acp_mcp);
     zigacp.addImport("zigstorage", zigstorage_module);
 
     const test_step = b.step("test", "Run unit tests");
@@ -186,6 +195,12 @@ pub fn build(b: *std.Build) void {
         .root_module = acp_conductor,
     });
     test_step.dependOn(&b.addRunArtifact(acp_conductor_tests).step);
+
+    const acp_mcp_tests = b.addTest(.{
+        .name = "acp-mcp-tests",
+        .root_module = acp_mcp,
+    });
+    test_step.dependOn(&b.addRunArtifact(acp_mcp_tests).step);
 
     const zigacp_tests = b.addTest(.{
         .name = "zigacp-tests",

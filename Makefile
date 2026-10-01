@@ -26,7 +26,7 @@ all: build format test
 	@echo "done"
 
 # Full pre-commit gate: clean, format, lint, build, then test.
-validate: clean format lint build test
+validate: clean format lint build windows test
 	@echo "validate done"
 
 # ---------------------------------------------

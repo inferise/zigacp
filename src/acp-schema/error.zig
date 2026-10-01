@@ -18,7 +18,15 @@ pub const internal_error: Code = -32603;
 /// ACP-specific reserved range starts at -32000 (per JSON-RPC convention for
 /// implementation-defined server errors).
 pub const auth_required: Code = -32000;
-pub const session_not_found: Code = -32001;
+/// ACP's code for a resource the request names that doesn't exist.
+pub const resource_not_found: Code = -32002;
+/// A session id nothing answers to. ACP has no session-specific code, so this
+/// is `resource_not_found`; it was once -32001, which ACP never defined.
+pub const session_not_found: Code = resource_not_found;
+/// A request to a session whose agent has exited: distinct, so a host can offer
+/// to start it again rather than read it as a request it got wrong.
+/// Implementation-defined, from the server-error range.
+pub const agent_gone: Code = -32010;
 
 /// Domain-level error value. Distinct from the Zig `error` set in `acp/errors.zig`
 /// because this one is JSON-shaped and crosses the wire.

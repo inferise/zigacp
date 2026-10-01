@@ -1,5 +1,5 @@
-//! The zigacp barrel: one namespace over `acp`, `acp-schema` and
-//! `acp-async`.
+//! The zigacp barrel: one namespace over `acp`, `acp-schema`, `acp-async`
+//! and `acp-mcp`.
 //!
 //! zigacp is five modules, and a consumer that imports them one by one ends up
 //! with `acp.Transport`, `acp_async.FrameTransport` and `schema.agent.StopReason`
@@ -29,6 +29,7 @@ const std = @import("std");
 const acp = @import("acp");
 const schema = @import("acp-schema");
 const acp_async = @import("acp-async");
+const acp_mcp = @import("acp-mcp");
 
 // -----------------------------------------------------------------------------
 // Connection (acp)
@@ -47,6 +48,16 @@ pub const Transport = acp.Transport;
 pub const Frame = acp.Frame;
 /// An in-process pair whose reads block until a frame arrives.
 pub const FrameTransport = acp_async.FrameTransport;
+/// A file-handle pair (a process's stdio) whose reads can be polled mid-turn.
+pub const StdioTransport = acp_async.StdioTransport;
+/// Runtime settings a `StdioTransport` borrows.
+pub const Config = acp_async.Config;
+
+// -----------------------------------------------------------------------------
+// MCP (acp-mcp)
+
+/// A read-only view over one MCP server from `session/new` or `session/load`.
+pub const McpServer = acp_mcp.McpServer;
 
 // -----------------------------------------------------------------------------
 // Shared schema (acp-schema)
@@ -70,6 +81,8 @@ pub const Agent = struct {
     pub const method_session_prompt = schema.agent.method_session_prompt;
     pub const method_session_cancel = schema.agent.method_session_cancel;
     pub const method_session_update = schema.agent.method_session_update;
+    pub const method_session_set_mode = schema.agent.method_session_set_mode;
+    pub const method_session_set_config_option = schema.agent.method_session_set_config_option;
 
     pub const InitializeRequest = schema.agent.InitializeRequest;
     pub const InitializeResponse = schema.agent.InitializeResponse;
@@ -82,11 +95,26 @@ pub const Agent = struct {
     pub const PromptRequest = schema.agent.PromptRequest;
     pub const CancelNotification = schema.agent.CancelNotification;
     pub const SessionNotification = schema.agent.SessionNotification;
-    pub const SessionUpdate = schema.agent.SessionUpdate;
+    pub const SessionUpdate = schema.SessionUpdate;
     pub const SessionId = schema.agent.SessionId;
     pub const SessionInfo = schema.agent.SessionInfo;
     pub const StopReason = schema.agent.StopReason;
-    pub const McpServerConfig = schema.agent.McpServerConfig;
+    pub const McpServerConfig = schema.McpServerConfig;
+    pub const McpServerStdio = schema.McpServerStdio;
+    pub const McpServerRemote = schema.McpServerRemote;
+    pub const McpEnv = schema.McpEnv;
+    pub const SetModeRequest = schema.agent.SetModeRequest;
+    pub const SetModeResponse = schema.agent.SetModeResponse;
+    pub const SetConfigOptionRequest = schema.agent.SetConfigOptionRequest;
+    pub const SetConfigOptionResponse = schema.agent.SetConfigOptionResponse;
+    pub const SessionMode = schema.SessionMode;
+    pub const SessionModeState = schema.SessionModeState;
+    pub const SessionConfigOption = schema.SessionConfigOption;
+    pub const SessionConfigSelect = schema.SessionConfigSelect;
+    pub const SessionConfigSelectOptions = schema.SessionConfigSelectOptions;
+    pub const SessionConfigSelectGroup = schema.SessionConfigSelectGroup;
+    pub const SessionConfigSelectOption = schema.SessionConfigSelectOption;
+    pub const AvailableCommand = schema.AvailableCommand;
 };
 
 // -----------------------------------------------------------------------------
@@ -155,6 +183,15 @@ pub const Meta = struct {
 // `unstable_session.close` is an empty struct and a reference to any of these
 // is a compile error at the use site, which is where it belongs.
 
+/// The `usage_update` session update, which ACP's stable surface does not yet have.
+///
+/// Present only when built with `-Dunstable_session_usage=true`; without it,
+/// `SessionUpdate` has no usable `usageUpdate` variant.
+pub const SessionUsage = struct {
+    pub const UsageUpdate = schema.usage_update.UsageUpdate;
+    pub const UsageCost = schema.usage_update.UsageCost;
+};
+
 /// session/close, which ACP's stable surface does not yet have.
 pub const SessionClose = struct {
     pub const method_session_close = schema.unstable_session.close.method_session_close;
@@ -174,6 +211,7 @@ test {
     std.testing.refAllDecls(Client);
     std.testing.refAllDecls(Meta);
     if (schema.unstable_session.close_enabled) std.testing.refAllDecls(SessionClose);
+    if (schema.usage_update.enabled) std.testing.refAllDecls(SessionUsage);
 }
 
 /// The agent side of the id-collision test: answers `ping` only after asking

@@ -15,6 +15,8 @@ pub const AcpError = error{
     TransportFailed,
     /// Session id didn't correspond to an open session.
     SessionNotFound,
+    /// The agent behind the session has exited, so nothing can be asked of it until it is started again.
+    AgentGone,
     /// Allocator returned OOM.
     OutOfMemory,
 };

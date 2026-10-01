@@ -326,5 +326,5 @@ test "ClientNotification dispatch session/update" {
     defer arena.deinit();
     const n = try ClientNotification.parseFromMethod(arena.allocator(), agent.method_session_update, params.value, .{});
     try std.testing.expect(n == .session_update);
-    try std.testing.expect(n.session_update.update == .agent_message_chunk);
+    try std.testing.expect(n.session_update.update == .agentMessageChunk);
 }

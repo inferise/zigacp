@@ -36,6 +36,7 @@ pub const Frame = transport.Frame;
 
 pub const connection = @import("connection.zig");
 pub const Connection = connection.Connection;
+pub const ErrorReply = connection.ErrorReply;
 
 pub const capabilities = @import("capabilities.zig");
 

@@ -17,7 +17,8 @@ This repository is a native **Zig** implementation. It gives you allocator-aware
 
 - [`acp-schema`](./src/acp-schema/) — Wire-format types: methods, requests, responses, notifications, content variants, tool calls, errors. Forward-compatible `unknown` buckets on every public union so newer peers don't crash older clients.
 - [`acp`](./src/acp/) — Synchronous `Connection`, vtable-based `Transport`, comptime-typed `Dispatcher`, `Session` state machine, capability negotiation, fixed-capacity trace ring buffer.
-- [`acp-async`](./src/acp-async/) — Newline-delimited framer, `BufferPair` deterministic test transport, `FileTransport` over `std.Io.File`, subprocess `Child` spawn.
+- [`acp-async`](./src/acp-async/) — Newline-delimited framer, `BufferPair` deterministic test transport, `FileTransport` over `std.Io.File`, `StdioTransport` (pollable, for a process serving ACP on its own stdio) with its runtime `Config`, subprocess `Child` spawn.
+- [`acp-mcp`](./src/acp-mcp/) — MCP logic above the protocol, starting with `McpServer`, a view over one server from `session/new`. The MCP wire types themselves (`McpServerConfig` and its stdio / HTTP / SSE shapes) are part of ACP and stay in `acp-schema`.
 - [`zigacp`](./src/module.zig) — The barrel harnesses import: every consumed symbol under one namespace, plus shared implementations above the protocol — `Client.Fs` (`fs/*`), `Client.Terminal` (`terminal/*` over plain pipes, bounded output, process-group kill), and the `Meta` key names cross-harness `_meta` fields use.
 
 **Proxy orchestration**
@@ -151,6 +152,7 @@ src/
 ├── acp/               # core SDK
 ├── acp-async/         # framing + real-IO transports
 ├── acp-conductor/     # proxy chain
+├── acp-mcp/           # MCP logic (wire types stay in acp-schema)
 ├── acp-test/          # in-memory transport + contract tests
 ├── acp-trace-viewer/  # TUI viewer
 ├── acp-cookbook/      # examples

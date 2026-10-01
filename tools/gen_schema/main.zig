@@ -237,7 +237,8 @@ fn emitTypeShape(ws: *std.json.Stringify, comptime T: type, depth: usize) !void 
             };
             inline for (sorted) |sf| {
                 const f = s.fields[sf.idx];
-                try ws.objectField(f.name);
+                // The wire key, not the Zig name: snake_case fields go out camelCase.
+                try ws.objectField(comptime schema.WireCase.key(f.name));
                 try emitFieldType(ws, f.type, f.default_value_ptr != null);
             }
             try ws.endObject();
