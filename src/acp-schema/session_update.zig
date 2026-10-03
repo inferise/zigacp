@@ -472,6 +472,26 @@ test "a tool call inlines its fields" {
     try std.testing.expect(update.value == .toolCallUpdate);
 }
 
+test "a tool call carries its input, output and _meta, and leaves an absent _meta out" {
+    const src =
+        \\{"sessionUpdate":"tool_call","toolCallId":"c1","title":"ls","kind":"execute","status":"pending","rawInput":{"command":"ls"},"_meta":{"zigclaude":{"tool":{"name":"Bash"}}}}
+    ;
+    const parsed = try std.json.parseFromSlice(SessionUpdate, std.testing.allocator, src, .{});
+    defer parsed.deinit();
+    const call = parsed.value.toolCall;
+    try std.testing.expectEqualStrings("ls", call.rawInput.?.value.object.get("command").?.string);
+    try std.testing.expectEqualStrings("Bash", call._meta.?.value.object.get("zigclaude").?.object.get("tool").?.object.get("name").?.string);
+
+    const written = try std.json.Stringify.valueAlloc(std.testing.allocator, parsed.value, .{});
+    defer std.testing.allocator.free(written);
+    try std.testing.expect(std.mem.indexOf(u8, written, "\"_meta\":{\"zigclaude\"") != null);
+
+    const done = SessionUpdate{ .toolCallUpdate = .{ .toolCallId = .{ .value = "c1" }, .status = .completed } };
+    const bare = try std.json.Stringify.valueAlloc(std.testing.allocator, done, .{});
+    defer std.testing.allocator.free(bare);
+    try std.testing.expect(std.mem.indexOf(u8, bare, "_meta") == null);
+}
+
 test "a plan keeps its entries" {
     const src =
         \\{"sessionUpdate":"plan","entries":[{"content":"step","status":"pending","priority":"medium"}]}

@@ -68,6 +68,8 @@ pub const PlanEntry = schema.PlanEntry;
 pub const ToolKind = schema.ToolKind;
 pub const ToolCallStatus = schema.ToolCallStatus;
 pub const ToolCallUpdate = schema.ToolCallUpdate;
+/// Any JSON value, carried as is: a tool call's `rawInput`, `rawOutput` and `_meta`.
+pub const RawValue = schema.RawValue;
 
 // -----------------------------------------------------------------------------
 // Agent methods: client → agent (acp-schema `agent`)

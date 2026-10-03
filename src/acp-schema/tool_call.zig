@@ -184,6 +184,8 @@ pub const ToolCall = struct {
     locations: ?[]const ToolCallLocation = null,
     rawInput: ?RawValue = null,
     rawOutput: ?RawValue = null,
+    /// Extensions under the sender's own key, as ACP allows on every type; null sends none.
+    _meta: ?RawValue = null,
 };
 
 /// Partial update to an existing tool call. All fields except `toolCallId`
@@ -197,6 +199,8 @@ pub const ToolCallUpdate = struct {
     locations: ?[]const ToolCallLocation = null,
     rawInput: ?RawValue = null,
     rawOutput: ?RawValue = null,
+    /// Extensions under the sender's own key, as ACP allows on every type; null sends none.
+    _meta: ?RawValue = null,
 };
 
 fn freeToken(allocator: std.mem.Allocator, token: std.json.Token) void {
