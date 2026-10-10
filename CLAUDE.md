@@ -18,7 +18,7 @@ Zig **0.17.0** exactly (`.minimum_zig_version` in `build.zig.zon`); CI pins it o
 make build                                 # zig build
 make test                                  # zig build test --summary all
 make validate                              # full gate before handing work back
-zig fmt --check src/ cli/ tools/           # exactly what CI enforces
+zig fmt --check src/ tools/           # exactly what CI enforces
 zig build yopo                             # reference agent contract suite
 zig build demo                             # cookbook client + agent examples
 zig build gen-schema -- /tmp/schema.json   # schema catalog (omit arg for stdout)
@@ -26,7 +26,7 @@ zig build gen-schema -- /tmp/schema.json   # schema catalog (omit arg for stdout
 
 Run one test file directly: `zig test src/acp/connection.zig` won't resolve imports — use `zig build test --summary all` and read the per-module breakdown, or temporarily narrow the `test` block.
 
-`make lint` runs `zlintpre` then `zlint -c styleguide` (config: `styleguide/zlint.json`), each scoped to `build.zig src/ cli/ tools/`. Both tools are installed org-wide under `/usr/local/inferise/`, not vendored here.
+`make lint` runs `zlintpre` then `zlint -c styleguide` (config: `styleguide/zlint.json`), each scoped to `build.zig src/ tools/`. Both tools are installed org-wide under `/usr/local/inferise/`, not vendored here.
 
 ## Module layout
 
@@ -39,10 +39,9 @@ Strictly layered; each package is `src/<name>/` with a `module.zig` barrel.
 - `src/acp-async/` — newline framer (16 MiB frame cap), `BufferPair`, `FileTransport` (EOF is `TransportClosed`; frames past the cap dropped), `StdioTransport` (a reader task queues frames so a blocked handler can poll mid-turn) and the `Config` it borrows, `LocalSeam(Agent)` (an agent served on one end of an in-process pair, torn down in order), subprocess `Child`.
 - `src/acp-mcp/` — all MCP logic. Only MCP types that are part of the ACP spec (`McpServerConfig` and its shapes) live in `acp-schema`; anything that *does* something with an MCP server goes here.
 - `src/acp-conductor/` — interceptor chain (pass / short-circuit / drop; reply interceptors see a reply with the method it answers) and `Pairing(T)`, which matches each reply to its request, one table per direction.
-- `src/module.zig` — the `zigacp` barrel, plus what sits above the protocol: `acp.Meta` (`read`/`of` for `_meta`, shared keys), `acp.Inferise` (the `_inferise/*` extension), `acp.Client.Fs`, `acp.Client.Terminal` (pipes), `acp.Client.PtyTerminal` and `acp.Pty` (`pty_session.zig`, `vt_decoder.zig`, `vt_screen.zig`: a pseudoterminal and the screen it draws). The barrel's code names no harness; docs and fixtures may.
+- `src/module.zig` — the `zigacp` barrel, plus what sits above the protocol: `acp.Meta` (`read`/`of` for `_meta`, shared keys), `acp.Inferise` (the `_inferise/*` extension), `acp.Client.Fs`, `acp.Client.Terminal` (pipes), `acp.Client.PtyTerminal` and `acp.Pty` (`pty_session.zig`, `vt_decoder.zig`, `vt_screen.zig`: a pseudoterminal and the screen it draws; `pty_login.zig`: `Pty.Login`, a CLI's sign-in on a pseudoterminal for a harness to relay over `_inferise/sign_in`). `acp.Inferise` includes the tool identity (`Tool`), the account list (`_inferise/accounts`) and sign-in (`_inferise/sign_in`, `sign_in_finish` polled, `sign_in_cancel`). The barrel's code names no harness; docs and fixtures may.
 - `src/acp-test/` — `PipePair` in-memory transport + `contract_handshake.zig`.
 - `src/yopo/main.zig` — reference agent; the executable contract spec.
-- `cli/` — `acp-trace-viewer` (`zig build trace-viewer`), the one TUI: `Trace` reads a captured trace, `TraceViewer` is the `zigtui` root widget. Its own module with its own `module.zig` barrel (`const cli = @import("module.zig")`, toolkit as `cli.tui`); takes `zigtui` and `zigstorage`, never the protocol packages, and nothing in `src/` takes `zigtui`. Its tests run as `cli-tests` in `zig build test`.
 - `tools/gen_schema/` — comptime-reflective schema catalog emitter.
 
 Do not hand-edit: `zig-pkg/`, `.zig-cache/`, `zig-out/` (all generated, all gitignored). `styleguide/` is a git submodule — change it in `inferise/styleguide`, never in place.
@@ -63,12 +62,9 @@ Do not hand-edit: `zig-pkg/`, `.zig-cache/`, `zig-out/` (all generated, all giti
 - **Wire field names vs C.2.** ZIGSTYLE wants snake_case fields; ACP's JSON is camelCase. New and changed wire structs use snake_case fields and route their `jsonStringify`/`jsonParse`/`jsonParseFromValue` through `acp-schema`'s `WireCase`, which maps `config_id` ↔ `configId`. Older structs still use camelCase field names directly. `SessionUpdate` variants are camelCase in Zig (`.agentMessageChunk`) and keep their snake_case wire tags.
 - **`make lint` is clean (0 findings) — keep it that way.** It runs two tools with different output formats, so read both: `zlint` prints boxed diagnostics, `zlintpre` prints bare `file:line:col:` lines. Left to themselves both walk the whole working directory and pull in ~276 findings from the vendored `zig-pkg/` cache, so the target feeds each an explicit file list instead. Never lint or edit `zig-pkg/` — it is a regenerable dependency cache and any edit is lost on the next fetch. Neither tool exits non-zero on warnings, so `make validate` passing is not by itself proof lint is clean; read the counts.
 - `zlintpre`'s one check is "trailing comma in fn params": a trailing comma makes `zig fmt` keep a parameter list split across lines, and the tool wants it collapsed onto one line. Signatures here therefore run long (up to ~162 chars) — that is intended, and `line-length` is disabled in `styleguide/zlint.json` to match. Don't re-wrap them.
-- **Two path dependencies: `.zigstorage = .{ .path = "../zigstorage" }` and `.zigtui = .{ .path = "../zigtui" }`** (which itself needs `../zigvaxis`). `build.zig` uses `b.dependency(...)` on each directly — no pinned remote, no fallback. Both sibling checkouts must exist (locally and in CI), or the build fails. Stock Zig ignores the `.clone` fields in `build.zig.zon`; `zigbuildx.Deps.cloneMissing` reads them, clones a missing sibling, and exits asking for a re-run.
+- **One path dependency: `.zigstorage = .{ .path = "../zigstorage" }`.** `build.zig` uses `b.dependency(...)` on it directly — no pinned remote, no fallback. The sibling checkout must exist (locally and in CI), or the build fails. There is no UI here: the trace viewer (`cli/`, on `zigtui`) was retired in 3.0.0 — nothing wrote the traces it read — so `zigtui` can depend on this package instead. Stock Zig ignores the `.clone` fields in `build.zig.zon`; `zigbuildx.Deps.cloneMissing` reads them, clones a missing sibling, and exits asking for a re-run.
 - **One build-only dependency: `zigbuildx`**, pinned by `.url` + `.hash`, never `.path` — it holds the code that clones missing siblings, so it cannot itself be one. Imported from `build.zig` only, never from `src/`. Moving it to a newer version is `zig fetch --save` and nothing else.
-- `zigstorage` is requested with target and optimize only — the options every other consumer passes, or a harness linking both mints a second copy. The `zigacp` barrel imports it (`src/client_fs.zig`), as do `gen-schema` and the trace viewer (`cli/`).
-- Building makes Zig write cache artifacts **into `../zigvaxis`** (through `zigtui`).
-- `cli/` is the only consumer of `zigtui`. Never request `zigvaxis` directly or import it from `cli/`: reach it as `cli.tui.*` (zigtui re-exports it), or a second copy is minted. `zigtui` is requested with target and optimize only, like `zigstorage`.
-- On macOS, `zigtui`'s build resolves the Xcode SDK, so every `zig build` here needs Xcode or the Command Line Tools.
+- `zigstorage` is requested with target and optimize only — the options every other consumer passes, or a harness linking both mints a second copy. The `zigacp` barrel imports it (`src/client_fs.zig`), as does `gen-schema`.
 - `README.md`'s install snippet points at `MagnovaAI/acp-zig` while `origin` is `inferise/zigacp`. Both appear in history — confirm which is intended before editing either.
 - `build.zig.zon`'s `.version` is the release source of truth; `make tag` scrapes it with `sed`.
 - CI runs the suite twice: once default, once with all 6 `unstable_*` flags on. A change that only compiles with flags off will pass locally and fail in CI.

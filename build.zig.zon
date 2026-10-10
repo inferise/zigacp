@@ -1,17 +1,13 @@
 .{
     .name = .zigacp,
-    .description = "Zig ACP Module",
-    .version = "2.0.0",
+    .description = "Zig ACP Client-Agent Module",
+    .version = "2.1.0",
     .fingerprint = 0x7e68bdcdb9528453,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .zigstorage = .{
             .path = "../zigstorage",
             .clone = "git@github.com:inferise/zigstorage.git",
-        },
-        .zigtui = .{
-            .path = "../zigtui",
-            .clone = "git@github.com:inferise/zigtui.git",
         },
         .zigbuildx = .{
             .url = "git+https://github.com/mlavergn/zigbuildx#main",
@@ -22,7 +18,6 @@
         "build.zig",
         "build.zig.zon",
         "src",
-        "cli",
         "tools",
         "LICENSE",
         "README.md",

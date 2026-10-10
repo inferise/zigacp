@@ -264,6 +264,9 @@ pub const Pty = struct {
     pub const VtEvent = @import("vt_decoder.zig").VtEvent;
     pub const Csi = @import("vt_decoder.zig").Csi;
     pub const VtScreen = @import("vt_screen.zig").VtScreen;
+    /// A CLI's own sign-in on a pseudoterminal, its output kept as plain text.
+    pub const Login = @import("pty_login.zig").PtyLogin;
+    pub const LoginEnd = @import("pty_login.zig").PtyLoginEnd;
 };
 
 // -----------------------------------------------------------------------------
@@ -351,6 +354,25 @@ pub const Inferise = struct {
     pub const usage = "usage";
     /// `_meta.inferise.turn` on a turn's end: the turn's number in its session.
     pub const turn = "turn";
+    /// `_meta.inferise.account` on `session/new` and `session/load`: which credentials to run as (`Account`).
+    pub const account = "account";
+    /// `_meta.inferise.failure` on a turn's end: the agent's own sentence for a turn that failed, fit to show.
+    pub const failure = "failure";
+    /// `_meta.inferise.trustedMcpServers` on `session/new` and `session/load`: MCP servers, by name, whose tools need no permission.
+    pub const trusted_mcp_servers = "trustedMcpServers";
+    /// `_meta.inferise.tool` on a `tool_call`: which tool ran, by the agent's own name for it (`Tool`).
+    pub const tool = "tool";
+
+    /// Client → agent request: what the agent can say about itself beyond `agentInfo` (`StatusRequest`, answered by `StatusResponse`).
+    pub const method_status = "_inferise/status";
+    /// Client → agent request: the accounts the agent can run as (`AccountsRequest`, answered by `AccountsResponse`).
+    pub const method_accounts = "_inferise/accounts";
+    /// Client → agent request: starts signing an account in (`SignInRequest`, answered by `SignInResponse` once there is something to show).
+    pub const method_sign_in = "_inferise/sign_in";
+    /// Client → agent request: passes a pasted code and asks whether a started sign-in has ended (`SignInFinishRequest`, answered by `SignInFinishResponse`).
+    pub const method_sign_in_finish = "_inferise/sign_in_finish";
+    /// Client → agent request: abandons a started sign-in (`SignInCancelRequest`, answered by `SignInCancelResponse`).
+    pub const method_sign_in_cancel = "_inferise/sign_in_cancel";
 
     /// `agentCapabilities._meta.inferise`: what the agent serves of this extension.
     pub const Capabilities = struct {
@@ -358,7 +380,606 @@ pub const Inferise = struct {
         interject: bool = false,
         /// A turn the agent starts itself is always closed by `_inferise/run_ended`.
         unpromptedTurns: bool = false,
+        /// `_inferise/status` is served.
+        status: bool = false,
+        /// `_inferise/accounts` is served.
+        accounts: bool = false,
+        /// `_inferise/sign_in`, `sign_in_finish` and `sign_in_cancel` are served.
+        signIn: bool = false,
+        /// Agent-specific methods a client may offer as actions, each called with `ExtensionRequest`.
+        extensions: ?[]const Extension = null,
     };
+
+    /// Which credentials a session runs as. ACP has no field for it, so it rides in `_meta.inferise.account`.
+    ///
+    /// One shape for every agent: each maps it onto its own mechanism (a config
+    /// directory, a home, a named login) and ignores what it has no use for.
+    pub const Account = struct {
+        /// The account's directory, for an agent whose credentials live in one.
+        home: ?[]const u8 = null,
+        /// The account's name, for an agent that resolves accounts itself.
+        name: ?[]const u8 = null,
+    };
+
+    /// Whether an advertised extension acts on one session or on the agent as a whole.
+    pub const ExtensionScope = enum {
+        /// Called with the session the client is showing.
+        session,
+        /// Called without a session.
+        agent,
+    };
+
+    /// One agent-specific action, advertised so a client can offer it without knowing the agent.
+    pub const Extension = struct {
+        /// The method to call, under the agent's own `_<agent>/` prefix.
+        method: []const u8,
+        /// What a client shows for it.
+        label: []const u8,
+        /// Whether it is called with a session.
+        scope: ExtensionScope = .session,
+        /// When set, the client asks the person for one line of text, under this prompt, and sends it as `input`.
+        input: ?[]const u8 = null,
+    };
+
+    /// The params of every advertised extension call.
+    pub const ExtensionRequest = struct {
+        const Self = @This();
+
+        /// The session, for a `session`-scoped extension.
+        session_id: ?Agent.SessionId = null,
+        /// The person's answer, for an extension that asked for `input`.
+        input: ?[]const u8 = null,
+
+        /// Writes the struct under its camelCase wire keys.
+        ///
+        /// Parameters:
+        /// - `self`: the struct.
+        /// - `jw`: the JSON writer.
+        ///
+        /// Return: nothing; propagates the writer's failure.
+        pub fn jsonStringify(self: *const Self, jw: anytype) !void {
+            try schema.WireCase.stringify(Self, self, jw);
+        }
+
+        /// Parses the struct from a token stream keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the token stream.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parse(Self, allocator, source, options);
+        }
+
+        /// Parses the struct from a JSON value keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the JSON value.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parseFromValue(Self, allocator, source, options);
+        }
+    };
+
+    /// What an advertised extension call answers: something to tell the person, and a session to open.
+    pub const ExtensionResponse = struct {
+        const Self = @This();
+
+        /// One line for the person: what happened, or why it did not.
+        summary: ?[]const u8 = null,
+        /// A session the call created, which a client may open with `session/load`.
+        session_id: ?Agent.SessionId = null,
+
+        /// Writes the struct under its camelCase wire keys.
+        ///
+        /// Parameters:
+        /// - `self`: the struct.
+        /// - `jw`: the JSON writer.
+        ///
+        /// Return: nothing; propagates the writer's failure.
+        pub fn jsonStringify(self: *const Self, jw: anytype) !void {
+            try schema.WireCase.stringify(Self, self, jw);
+        }
+
+        /// Parses the struct from a token stream keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the token stream.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parse(Self, allocator, source, options);
+        }
+
+        /// Parses the struct from a JSON value keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the JSON value.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parseFromValue(Self, allocator, source, options);
+        }
+    };
+
+    /// `_inferise/status`'s params.
+    pub const StatusRequest = struct {
+        const Self = @This();
+
+        /// The session asked about, when the answer differs by session (an account, say).
+        session_id: ?Agent.SessionId = null,
+
+        /// Writes the struct under its camelCase wire keys.
+        ///
+        /// Parameters:
+        /// - `self`: the struct.
+        /// - `jw`: the JSON writer.
+        ///
+        /// Return: nothing; propagates the writer's failure.
+        pub fn jsonStringify(self: *const Self, jw: anytype) !void {
+            try schema.WireCase.stringify(Self, self, jw);
+        }
+
+        /// Parses the struct from a token stream keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the token stream.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parse(Self, allocator, source, options);
+        }
+
+        /// Parses the struct from a JSON value keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the JSON value.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parseFromValue(Self, allocator, source, options);
+        }
+    };
+
+    /// One labelled fact a client shows as-is.
+    pub const StatusField = struct {
+        label: []const u8,
+        value: []const u8,
+    };
+
+    /// `_inferise/status`'s answer: one shape for every agent, so a client renders it without knowing which.
+    pub const StatusResponse = struct {
+        /// The version of the CLI the agent drives, when it drives one; the agent's own is `agentInfo.version`.
+        cli: ?[]const u8 = null,
+        /// The account the session runs as, by name.
+        account: ?[]const u8 = null,
+        /// Anything else worth showing, in order.
+        fields: []const StatusField = &.{},
+    };
+
+    /// `_meta.inferise.tool` on a `tool_call`: the tool behind it, named as the agent names it.
+    ///
+    /// ACP's `title` and `kind` say what a call does for a person to read; this
+    /// says which tool it was, for a client that counts or filters by tool.
+    pub const Tool = struct {
+        /// The agent's own name for the tool (`Bash`, `commandExecution`, `run_shell_command`).
+        name: []const u8,
+        /// The MCP server the tool belongs to, for an MCP tool.
+        server: ?[]const u8 = null,
+        /// The agent that ran it, by its short name (`claude`, `codex`, `grok`, `gemini`, `copilot`).
+        agent: []const u8,
+    };
+
+    /// Reads `_meta.inferise.tool` off a `tool_call`.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns what is parsed; an arena in practice.
+    /// - `meta`: the update's `_meta`, or null.
+    ///
+    /// Return: the tool, or null when none was named; `error.InvalidParams` when it is malformed.
+    pub fn readTool(allocator: std.mem.Allocator, meta: ?RawValue) AcpError!?Tool {
+        const Ours = struct { tool: ?Tool = null };
+        const ours = try Meta.read(Ours, allocator, meta, key) orelse return null;
+        return ours.tool;
+    }
+
+    /// `_inferise/accounts`'s params: none.
+    pub const AccountsRequest = struct {};
+
+    /// One account an agent can run as, as `_inferise/accounts` lists it.
+    pub const KnownAccount = struct {
+        const Self = @This();
+
+        /// The name a session asks for it by, in `_meta.inferise.account.name`.
+        name: []const u8,
+        /// The account a session runs as when it names none.
+        is_default: bool = false,
+        /// Whether its credentials are in place; a session on one that is not is refused.
+        signed_in: bool = false,
+
+        /// Writes the struct under its camelCase wire keys.
+        ///
+        /// Parameters:
+        /// - `self`: the struct.
+        /// - `jw`: the JSON writer.
+        ///
+        /// Return: nothing; propagates the writer's failure.
+        pub fn jsonStringify(self: *const Self, jw: anytype) !void {
+            try schema.WireCase.stringify(Self, self, jw);
+        }
+
+        /// Parses the struct from a token stream keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the token stream.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parse(Self, allocator, source, options);
+        }
+
+        /// Parses the struct from a JSON value keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the JSON value.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parseFromValue(Self, allocator, source, options);
+        }
+    };
+
+    /// `_inferise/accounts`'s answer, default first.
+    pub const AccountsResponse = struct {
+        accounts: []const KnownAccount = &.{},
+    };
+
+    /// `_inferise/sign_in`'s params.
+    pub const SignInRequest = struct {
+        /// The account to sign in, by name; a name the agent does not have creates it. Null for the default.
+        account: ?[]const u8 = null,
+    };
+
+    /// `_inferise/sign_in`'s answer: what the person needs to finish signing in elsewhere.
+    ///
+    /// The agent answers as soon as its sign-in has something to show and keeps
+    /// it running; `_inferise/sign_in_finish` reports the end.
+    pub const SignInResponse = struct {
+        const Self = @This();
+
+        /// The account being signed in, by the name `_inferise/accounts` will list it under.
+        account: ?[]const u8 = null,
+        /// The page to open, when the sign-in has one.
+        url: ?[]const u8 = null,
+        /// A code to type on that page, for a device-code sign-in.
+        user_code: ?[]const u8 = null,
+        /// Whether the page hands back a code the person pastes into `sign_in_finish`.
+        needs_code: bool = false,
+        /// One line for the person when there is nothing to open: what to do instead.
+        summary: ?[]const u8 = null,
+
+        /// Writes the struct under its camelCase wire keys.
+        ///
+        /// Parameters:
+        /// - `self`: the struct.
+        /// - `jw`: the JSON writer.
+        ///
+        /// Return: nothing; propagates the writer's failure.
+        pub fn jsonStringify(self: *const Self, jw: anytype) !void {
+            try schema.WireCase.stringify(Self, self, jw);
+        }
+
+        /// Parses the struct from a token stream keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the token stream.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parse(Self, allocator, source, options);
+        }
+
+        /// Parses the struct from a JSON value keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the JSON value.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parseFromValue(Self, allocator, source, options);
+        }
+    };
+
+    /// `_inferise/sign_in_finish`'s params.
+    pub const SignInFinishRequest = struct {
+        /// The account named to `sign_in`.
+        account: ?[]const u8 = null,
+        /// The code the page handed back, when `needs_code` said so.
+        code: ?[]const u8 = null,
+    };
+
+    /// `_inferise/sign_in_finish`'s answer.
+    ///
+    /// The agent waits a few seconds at most, so a client polls: `waiting` says
+    /// the sign-in has not ended yet, and the client asks again, sends the code
+    /// when the person gives one, or cancels.
+    pub const SignInFinishResponse = struct {
+        const Self = @This();
+
+        /// The sign-in is still running; ask again.
+        waiting: bool = false,
+        /// Whether the account is signed in now.
+        signed_in: bool = false,
+        /// One line for the person: what happened, or why it did not.
+        summary: ?[]const u8 = null,
+
+        /// Writes the struct under its camelCase wire keys.
+        ///
+        /// Parameters:
+        /// - `self`: the struct.
+        /// - `jw`: the JSON writer.
+        ///
+        /// Return: nothing; propagates the writer's failure.
+        pub fn jsonStringify(self: *const Self, jw: anytype) !void {
+            try schema.WireCase.stringify(Self, self, jw);
+        }
+
+        /// Parses the struct from a token stream keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the token stream.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parse(Self, allocator, source, options);
+        }
+
+        /// Parses the struct from a JSON value keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the JSON value.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parseFromValue(Self, allocator, source, options);
+        }
+    };
+
+    /// `_inferise/sign_in_cancel`'s params.
+    pub const SignInCancelRequest = struct {
+        /// The account named to `sign_in`.
+        account: ?[]const u8 = null,
+    };
+
+    /// `_inferise/sign_in_cancel`'s answer: none.
+    pub const SignInCancelResponse = struct {};
+
+    /// One rate-limit window of the account a turn ran on.
+    pub const UsageWindow = struct {
+        const Self = @This();
+
+        /// A stable id, such as `five_hour` or `primary`.
+        id: []const u8,
+        /// What a client shows for it (`5-hour`); a client derives one from `window_minutes` when absent.
+        label: ?[]const u8 = null,
+        /// How much is used, 0 to 100.
+        used_percent: f64,
+        /// When it resets, in Unix seconds.
+        resets_at: ?u64 = null,
+        /// The window's length.
+        window_minutes: ?u64 = null,
+
+        /// Writes the struct under its camelCase wire keys, leaving out what was not reported.
+        ///
+        /// Parameters:
+        /// - `self`: the struct.
+        /// - `jw`: the JSON writer.
+        ///
+        /// Return: nothing; propagates the writer's failure.
+        pub fn jsonStringify(self: *const Self, jw: anytype) !void {
+            try schema.WireCase.stringify(Self, self, jw);
+        }
+
+        /// Parses the struct from a token stream keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the token stream.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parse(Self, allocator, source, options);
+        }
+
+        /// Parses the struct from a JSON value keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the JSON value.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parseFromValue(Self, allocator, source, options);
+        }
+    };
+
+    /// One turn's accounting, in one shape for every agent: `_meta.inferise.usage` on a turn's end.
+    ///
+    /// The union of what agents measure. A figure the agent did not measure is
+    /// absent, never zero, so a client can tell "not reported" from "none".
+    pub const TurnUsage = struct {
+        const Self = @This();
+
+        /// Wall time from submit.
+        wall_ms: ?u64 = null,
+        /// The agent's own time, excluding what it spent blocked on the client.
+        agent_ms: ?u64 = null,
+        /// The whole request — system prompt, tool definitions, conversation — not what was typed.
+        input_tokens: ?u64 = null,
+        /// The part of `input_tokens` served from cache.
+        cached_input_tokens: ?u64 = null,
+        output_tokens: ?u64 = null,
+        reasoning_output_tokens: ?u64 = null,
+        cost_usd: ?f64 = null,
+        /// The conversation's size after the turn.
+        context_tokens: ?u64 = null,
+        /// The window `context_tokens` fills.
+        context_window: ?u64 = null,
+        /// The account's rate-limit windows.
+        windows: []const UsageWindow = &.{},
+
+        /// Writes the struct under its camelCase wire keys, leaving out what was not reported.
+        ///
+        /// Parameters:
+        /// - `self`: the struct.
+        /// - `jw`: the JSON writer.
+        ///
+        /// Return: nothing; propagates the writer's failure.
+        pub fn jsonStringify(self: *const Self, jw: anytype) !void {
+            try schema.WireCase.stringify(Self, self, jw);
+        }
+
+        /// Parses the struct from a token stream keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the token stream.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parse(Self, allocator, source, options);
+        }
+
+        /// Parses the struct from a JSON value keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the JSON value.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parseFromValue(Self, allocator, source, options);
+        }
+    };
+
+    /// What `_meta.inferise` says at a turn's end, on a prompt's reply or `_inferise/run_ended`.
+    pub const TurnMeta = struct {
+        usage: ?TurnUsage = null,
+        failure: ?[]const u8 = null,
+        /// What the agent declined to do without approval this turn, each in its own words.
+        denied: []const []const u8 = &.{},
+    };
+
+    /// Reads a turn's accounting and failure off a prompt reply's `_meta`.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns what is parsed; an arena in practice.
+    /// - `meta`: the reply's `_meta`, or null.
+    ///
+    /// Return: what the agent said, all null when it said nothing; `error.InvalidParams` when it is malformed.
+    pub fn readTurn(allocator: std.mem.Allocator, meta: ?RawValue) AcpError!TurnMeta {
+        return try Meta.read(TurnMeta, allocator, meta, key) orelse .{};
+    }
+
+    /// What `session/new` and `session/load` carry under `_meta.inferise` that ACP has nowhere to name.
+    pub const SessionMeta = struct {
+        const Self = @This();
+
+        /// Which credentials to run as.
+        account: ?Account = null,
+        /// Where the session's record goes, for a host whose `cwd` is a user's repository.
+        log_dir: ?[]const u8 = null,
+        /// MCP servers, by name, whose tools need no permission — a host's own, typically.
+        trusted_mcp_servers: []const []const u8 = &.{},
+
+        /// Writes the struct under its camelCase wire keys.
+        ///
+        /// Parameters:
+        /// - `self`: the struct.
+        /// - `jw`: the JSON writer.
+        ///
+        /// Return: nothing; propagates the writer's failure.
+        pub fn jsonStringify(self: *const Self, jw: anytype) !void {
+            try schema.WireCase.stringify(Self, self, jw);
+        }
+
+        /// Parses the struct from a token stream keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the token stream.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parse(Self, allocator, source, options);
+        }
+
+        /// Parses the struct from a JSON value keyed by wire names.
+        ///
+        /// Parameters:
+        /// - `allocator`: owns everything parsed.
+        /// - `source`: the JSON value.
+        /// - `options`: the caller's parse options.
+        ///
+        /// Return: the struct; propagates a parse failure.
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Self {
+            return schema.WireCase.parseFromValue(Self, allocator, source, options);
+        }
+    };
+
+    /// Reads everything `_meta.inferise` says on `session/new` or `session/load`.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns what is parsed; an arena in practice.
+    /// - `meta`: the request's `_meta`, or null.
+    ///
+    /// Return: what the host said, all absent when it said nothing; `error.InvalidParams` when malformed.
+    pub fn readSession(allocator: std.mem.Allocator, meta: ?RawValue) AcpError!SessionMeta {
+        return try Meta.read(SessionMeta, allocator, meta, key) orelse .{};
+    }
+
+    /// Reads `_meta.inferise.account` off a request.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns what is parsed; an arena in practice.
+    /// - `meta`: the request's `_meta`, or null.
+    ///
+    /// Return: the account, or null when none was named; `error.InvalidParams` when it is malformed.
+    pub fn readAccount(allocator: std.mem.Allocator, meta: ?RawValue) AcpError!?Account {
+        const Ours = struct { account: ?Account = null };
+        const ours = try Meta.read(Ours, allocator, meta, key) orelse return null;
+        return ours.account;
+    }
 
     pub const InterjectNotification = struct {
         sessionId: Agent.SessionId,
@@ -464,6 +1085,168 @@ test "an agent's capabilities name its session methods, MCP transports and itsel
     try std.testing.expect(capabilities.sessionCapabilities.?.delete == null);
     const inferise = (try Meta.read(Inferise.Capabilities, std.testing.allocator, capabilities._meta, Inferise.key)).?;
     try std.testing.expect(inferise.interject and !inferise.unpromptedTurns);
+}
+
+test "an account rides in _meta.inferise and reads back" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const meta = try Meta.of(arena, Inferise.key, .{ .account = Inferise.Account{ .home = "/Users/me/.claude-work" } });
+    const account = (try Inferise.readAccount(arena, meta)).?;
+    try std.testing.expectEqualStrings("/Users/me/.claude-work", account.home.?);
+    try std.testing.expectEqual(@as(?[]const u8, null), account.name);
+
+    try std.testing.expectEqual(@as(?Inferise.Account, null), try Inferise.readAccount(arena, null));
+    const other = try Meta.of(arena, Inferise.key, .{ .instructions = "be brief" });
+    try std.testing.expectEqual(@as(?Inferise.Account, null), try Inferise.readAccount(arena, other));
+}
+
+test "advertised extensions and status read off an agent's capabilities" {
+    const src =
+        \\{"interject":false,"status":true,"extensions":[
+        \\ {"method":"_zigafm/export","label":"Export"},
+        \\ {"method":"_zigafm/import","label":"Import","scope":"agent","input":"File to import"}]}
+    ;
+    const parsed = try std.json.parseFromSlice(Inferise.Capabilities, std.testing.allocator, src, .{});
+    defer parsed.deinit();
+    const capabilities = parsed.value;
+    try std.testing.expect(capabilities.status);
+    const extensions = capabilities.extensions.?;
+    try std.testing.expectEqual(@as(usize, 2), extensions.len);
+    try std.testing.expectEqual(Inferise.ExtensionScope.session, extensions[0].scope);
+    try std.testing.expectEqual(@as(?[]const u8, null), extensions[0].input);
+    try std.testing.expectEqual(Inferise.ExtensionScope.agent, extensions[1].scope);
+    try std.testing.expectEqualStrings("File to import", extensions[1].input.?);
+}
+
+test "extension and status params use camelCase on the wire" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const options: std.json.Stringify.Options = .{ .emit_null_optional_fields = false };
+
+    const request: Inferise.ExtensionRequest = .{ .session_id = .{ .value = "s-1" }, .input = "notes.json" };
+    const request_bytes = try std.json.Stringify.valueAlloc(arena, request, options);
+    try std.testing.expectEqualStrings("{\"sessionId\":\"s-1\",\"input\":\"notes.json\"}", request_bytes);
+    const request_back = try std.json.parseFromSliceLeaky(Inferise.ExtensionRequest, arena, request_bytes, .{});
+    try std.testing.expectEqualStrings("s-1", request_back.session_id.?.value);
+
+    const response = try std.json.parseFromSliceLeaky(Inferise.ExtensionResponse, arena, "{\"summary\":\"Imported\",\"sessionId\":\"s-2\"}", .{});
+    try std.testing.expectEqualStrings("s-2", response.session_id.?.value);
+
+    const status_request = try std.json.Stringify.valueAlloc(arena, Inferise.StatusRequest{}, options);
+    try std.testing.expectEqualStrings("{}", status_request);
+
+    const status = try std.json.parseFromSliceLeaky(Inferise.StatusResponse, arena, "{\"cli\":\"2.1.285\",\"fields\":[{\"label\":\"Store\",\"value\":\"/tmp\"}]}", .{});
+    try std.testing.expectEqualStrings("2.1.285", status.cli.?);
+    try std.testing.expectEqualStrings("Store", status.fields[0].label);
+}
+
+test "a turn's usage and failure ride in _meta.inferise, absent figures left out" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const usage: Inferise.TurnUsage = .{
+        .wall_ms = 2630,
+        .input_tokens = 4,
+        .cost_usd = 0.21,
+        .windows = &.{.{ .id = "five_hour", .used_percent = 30, .window_minutes = 300 }},
+    };
+    const bytes = try std.json.Stringify.valueAlloc(arena, usage, .{ .emit_null_optional_fields = false });
+    try std.testing.expectEqualStrings("{\"wallMs\":2630,\"inputTokens\":4,\"costUsd\":0.21,\"windows\":[{\"id\":\"five_hour\",\"usedPercent\":30,\"windowMinutes\":300}]}", bytes);
+
+    const meta = try Meta.of(arena, Inferise.key, Inferise.TurnMeta{ .usage = usage, .failure = "Claude exited" });
+    const turn = try Inferise.readTurn(arena, meta);
+    try std.testing.expectEqual(@as(?u64, 2630), turn.usage.?.wall_ms);
+    try std.testing.expectEqual(@as(?u64, null), turn.usage.?.agent_ms);
+    try std.testing.expectEqual(@as(?u64, 300), turn.usage.?.windows[0].window_minutes);
+    try std.testing.expectEqualStrings("Claude exited", turn.failure.?);
+
+    const silent = try Inferise.readTurn(arena, null);
+    try std.testing.expect(silent.usage == null and silent.failure == null);
+    try std.testing.expectEqual(@as(usize, 0), silent.denied.len);
+
+    const declined = try Meta.of(arena, Inferise.key, Inferise.TurnMeta{ .denied = &.{"run rm -rf"} });
+    try std.testing.expectEqualStrings("run rm -rf", (try Inferise.readTurn(arena, declined)).denied[0]);
+}
+
+test "a session's account, log directory and trusted servers read off _meta.inferise in one shape" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const sent: Inferise.SessionMeta = .{
+        .account = .{ .name = "work" },
+        .log_dir = "/var/log/inferise",
+        .trusted_mcp_servers = &.{"inferise"},
+    };
+    const meta = try Meta.of(arena, Inferise.key, sent);
+    const bytes = try std.json.Stringify.valueAlloc(arena, meta, .{ .emit_null_optional_fields = false });
+    try std.testing.expectEqualStrings("{\"inferise\":{\"account\":{\"name\":\"work\"},\"logDir\":\"/var/log/inferise\",\"trustedMcpServers\":[\"inferise\"]}}", bytes);
+
+    const read = try Inferise.readSession(arena, meta);
+    try std.testing.expectEqualStrings("work", read.account.?.name.?);
+    try std.testing.expectEqualStrings("/var/log/inferise", read.log_dir.?);
+    try std.testing.expectEqualStrings("inferise", read.trusted_mcp_servers[0]);
+
+    // An unrelated member beside them is ignored, not an error.
+    const mixed = try Meta.of(arena, Inferise.key, .{ .instructions = "be brief", .logDir = "/tmp" });
+    try std.testing.expectEqualStrings("/tmp", (try Inferise.readSession(arena, mixed)).log_dir.?);
+    try std.testing.expectEqual(@as(usize, 0), (try Inferise.readSession(arena, null)).trusted_mcp_servers.len);
+}
+
+test "a tool's identity rides in _meta.inferise.tool and reads back" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const meta = try Meta.of(arena, Inferise.key, .{ .tool = Inferise.Tool{ .name = "search", .server = "docs", .agent = "claude" } });
+    const bytes = try std.json.Stringify.valueAlloc(arena, meta, .{ .emit_null_optional_fields = false });
+    try std.testing.expectEqualStrings("{\"inferise\":{\"tool\":{\"name\":\"search\",\"server\":\"docs\",\"agent\":\"claude\"}}}", bytes);
+    const tool = (try Inferise.readTool(arena, meta)).?;
+    try std.testing.expectEqualStrings("search", tool.name);
+    try std.testing.expectEqualStrings("docs", tool.server.?);
+    try std.testing.expectEqualStrings("claude", tool.agent);
+
+    try std.testing.expectEqual(@as(?Inferise.Tool, null), try Inferise.readTool(arena, null));
+    const other = try Meta.of(arena, Inferise.key, .{ .logDir = "/tmp" });
+    try std.testing.expectEqual(@as(?Inferise.Tool, null), try Inferise.readTool(arena, other));
+}
+
+test "accounts and sign-in are advertised, and their params and answers use camelCase on the wire" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const options: std.json.Stringify.Options = .{ .emit_null_optional_fields = false };
+
+    const capabilities = try std.json.parseFromSliceLeaky(Inferise.Capabilities, arena, "{\"status\":true,\"accounts\":true,\"signIn\":true}", .{});
+    try std.testing.expect(capabilities.accounts and capabilities.signIn);
+
+    const listed: Inferise.AccountsResponse = .{ .accounts = &.{
+        .{ .name = "gemini", .is_default = true, .signed_in = true },
+        .{ .name = "work" },
+    } };
+    const listed_bytes = try std.json.Stringify.valueAlloc(arena, listed, options);
+    try std.testing.expectEqualStrings("{\"accounts\":[{\"name\":\"gemini\",\"isDefault\":true,\"signedIn\":true},{\"name\":\"work\",\"isDefault\":false,\"signedIn\":false}]}", listed_bytes);
+    const listed_back = try std.json.parseFromSliceLeaky(Inferise.AccountsResponse, arena, listed_bytes, .{});
+    try std.testing.expect(listed_back.accounts[0].is_default and !listed_back.accounts[1].signed_in);
+    try std.testing.expectEqualStrings("{}", try std.json.Stringify.valueAlloc(arena, Inferise.AccountsRequest{}, options));
+
+    const started = try std.json.parseFromSliceLeaky(Inferise.SignInResponse, arena, "{\"url\":\"https://example.com/device\",\"userCode\":\"ABCD-1234\"}", .{});
+    try std.testing.expectEqualStrings("ABCD-1234", started.user_code.?);
+    try std.testing.expect(!started.needs_code);
+    const pasted = try std.json.Stringify.valueAlloc(arena, Inferise.SignInResponse{ .url = "https://example.com", .needs_code = true }, options);
+    try std.testing.expectEqualStrings("{\"url\":\"https://example.com\",\"needsCode\":true}", pasted);
+
+    const finish = try std.json.Stringify.valueAlloc(arena, Inferise.SignInFinishRequest{ .account = "work", .code = "4/0Ab" }, options);
+    try std.testing.expectEqualStrings("{\"account\":\"work\",\"code\":\"4/0Ab\"}", finish);
+    const finished = try std.json.parseFromSliceLeaky(Inferise.SignInFinishResponse, arena, "{\"signedIn\":true,\"summary\":\"Signed in\"}", .{});
+    try std.testing.expect(finished.signed_in and !finished.waiting);
+    const polled = try std.json.Stringify.valueAlloc(arena, Inferise.SignInFinishResponse{ .waiting = true }, options);
+    try std.testing.expectEqualStrings("{\"waiting\":true,\"signedIn\":false}", polled);
+    try std.testing.expectEqualStrings("{}", try std.json.Stringify.valueAlloc(arena, Inferise.SignInCancelResponse{}, options));
 }
 
 /// The agent side of the id-collision test: answers `ping` only after asking

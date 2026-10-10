@@ -215,45 +215,6 @@ pub fn build(b: *std.Build) void {
     });
     const docs_step = b.step("docs", "Emit API documentation to zig-out/docs");
     docs_step.dependOn(&install_docs.step);
-
-    // The trace viewer, `cli/`. Its toolkit is `zigtui`, which brings `zigvaxis`
-    // with it, re-exported through its own module, so this project never
-    // requests `zigvaxis` itself. Target and optimize only, the options every
-    // other consumer passes, or a harness linking both mints a second copy.
-    // Nothing in `src/` takes `zigtui`.
-    const zigtui_module = b.dependency("zigtui", .{ .target = target, .optimize = optimize }).module("zigtui");
-
-    const trace_viewer_module = b.createModule(.{
-        .root_source_file = b.path("cli/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    trace_viewer_module.addImport("zigtui", zigtui_module);
-    trace_viewer_module.addImport("zigstorage", zigstorage_module);
-
-    const trace_viewer_exe = b.addExecutable(.{
-        .name = "acp-trace-viewer",
-        .root_module = trace_viewer_module,
-    });
-    b.installArtifact(trace_viewer_exe);
-
-    const viewer_step = b.step("trace-viewer", "Build the interactive trace viewer");
-    viewer_step.dependOn(&trace_viewer_exe.step);
-
-    // The CLI is its own module, rooted at its barrel for its tests.
-    const cli_tests_module = b.createModule(.{
-        .root_source_file = b.path("cli/module.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    cli_tests_module.addImport("zigtui", zigtui_module);
-    cli_tests_module.addImport("zigstorage", zigstorage_module);
-
-    const cli_tests = b.addTest(.{
-        .name = "cli-tests",
-        .root_module = cli_tests_module,
-    });
-    test_step.dependOn(&b.addRunArtifact(cli_tests).step);
 }
 
 /// Protocol surface ACP has not stabilized, each off unless asked for.

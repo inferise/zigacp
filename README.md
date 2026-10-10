@@ -5,7 +5,7 @@
 
 The **Agent Client Protocol** (ACP) standardises communication between *code editors* — interactive programs for viewing and editing source code — and *coding agents* — programs that use generative AI to autonomously modify code.
 
-This repository is a native **Zig** implementation. It gives you allocator-aware wire types, a transport-agnostic synchronous SDK, proxy orchestration, an interactive trace viewer, a reference agent binary, and a comptime-reflective schema generator.
+This repository is a native **Zig** implementation. It gives you allocator-aware wire types, a transport-agnostic synchronous SDK, proxy orchestration, a reference agent binary, and a comptime-reflective schema generator.
 
 > **Status:** working core, public API stabilising toward `v0.1.0`. Wire format matches the canonical protocol; the public surface is unstable until tagged.
 
@@ -19,12 +19,11 @@ This repository is a native **Zig** implementation. It gives you allocator-aware
 - [`acp`](./src/acp/) — Synchronous `Connection` (results own their memory), vtable-based `Transport`, comptime-typed `Dispatcher` (or `registerRequestFn` for a plain function), `RawPeer` / `RawMessage` (whole parsed frames, for proxies), `ScriptedPeer` (a scripted test transport), `Session` state machine, capability negotiation, fixed-capacity trace ring buffer.
 - [`acp-async`](./src/acp-async/) — Newline-delimited framer (16 MiB frame cap), `BufferPair` deterministic test transport, `FileTransport` over `std.Io.File` (EOF is `TransportClosed`), `StdioTransport` (pollable, for a process serving ACP on its own stdio) with its runtime `Config`, `LocalSeam(Agent)` (an agent served on one end of an in-process `FrameTransport` pair, torn down in order), subprocess `Child` spawn.
 - [`acp-mcp`](./src/acp-mcp/) — MCP logic above the protocol, starting with `McpServer`, a view over one server from `session/new`. The MCP wire types themselves (`McpServerConfig` and its stdio / HTTP / SSE shapes) are part of ACP and stay in `acp-schema`.
-- [`zigacp`](./src/module.zig) — The barrel harnesses import: every consumed symbol under one namespace (`RawPeer`, `ScriptedPeer`, `FileTransport`, `LocalSeam`, `Conductor`, …), plus shared implementations above the protocol — `Client.Fs` (`fs/*`), `Client.Terminal` (`terminal/*` over plain pipes, bounded output, process-group kill), `Client.PtyTerminal` (`terminal/*` on a pseudoterminal), `Pty` (`Session`, `Pair`, `VtDecoder`, `VtScreen`: a pseudoterminal and the screen it draws), `Meta` (`read` / `of` for `_meta`, and the key names cross-harness `_meta` fields use) and `Inferise` (the `_inferise/*` extension).
+- [`zigacp`](./src/module.zig) — The barrel harnesses import: every consumed symbol under one namespace (`RawPeer`, `ScriptedPeer`, `FileTransport`, `LocalSeam`, `Conductor`, …), plus shared implementations above the protocol — `Client.Fs` (`fs/*`), `Client.Terminal` (`terminal/*` over plain pipes, bounded output, process-group kill), `Client.PtyTerminal` (`terminal/*` on a pseudoterminal), `Pty` (`Session`, `Pair`, `VtDecoder`, `VtScreen`: a pseudoterminal and the screen it draws; `Login`: a CLI's own sign-in run on one, its output kept as plain text), `Meta` (`read` / `of` for `_meta`, and the key names cross-harness `_meta` fields use) and `Inferise` (the `_inferise/*` extension).
 
 **Proxy orchestration**
 
 - [`acp-conductor`](./src/acp-conductor/) — Compose N typed interceptors between client and agent ends with pass / short-circuit / drop semantics; reply interceptors see each reply with the method it answers, and `Pairing(T)` matches each reply to its request, one table per direction. The barrel re-exports it as `acp.Conductor`.
-- [`acp-trace-viewer`](./cli/) — Interactive TUI for replaying captured traces, built on `zigtui`.
 
 **Examples and testing**
 
@@ -51,7 +50,7 @@ const zigacp_dep = b.dependency("zigacp", .{ .target = target, .optimize = optim
 exe.root_module.addImport("zigacp", zigacp_dep.module("zigacp"));
 ```
 
-Request it with target and optimize only. zigacp depends on two sibling checkouts, `../zigstorage` (disk access for the barrel, `gen-schema` and the trace viewer) and `../zigtui` (the trace viewer only; it brings `../zigvaxis` with it); all must exist beside this one.
+Request it with target and optimize only. zigacp depends on one sibling checkout, `../zigstorage` (disk access for the barrel and `gen-schema`), which must exist beside this one.
 
 ## Quick start
 
@@ -112,11 +111,10 @@ A full client+agent round-trip lives in [`src/acp-test/contract_handshake.zig`](
 zig version                                # must report 0.17.0
 zig build                                  # build all libraries + binaries
 zig build test --summary all               # 245 pass + 7 gated skips, zero leaks
-zig fmt --check src/ cli/ tools/           # formatting check
+zig fmt --check src/ tools/           # formatting check
 
 zig build yopo                             # run the reference contract suite
 zig build gen-schema -- /tmp/schema.json   # emit canonical schema catalog
-zig build trace-viewer                     # build the TUI viewer
 ```
 
 ### Unstable feature flags
@@ -168,7 +166,6 @@ src/
 ├── acp-test/                # in-memory transport + contract tests
 ├── acp-cookbook/            # examples
 └── yopo/                    # reference agent binary
-cli/                   # acp-trace-viewer, the TUI (zigtui)
 tools/
 └── gen_schema/        # canonical schema catalog generator
 ```
@@ -178,7 +175,7 @@ tools/
 ## Contributing
 
 - **Bug reports:** open a [bug report issue](.github/ISSUE_TEMPLATE/bug_report.md). Include `zig version`, OS / arch, and a minimal failing snippet.
-- **Pull requests:** the PR template lists the merge checklist. Each PR should keep `zig build test` green with zero leaks and `zig fmt --check src/ cli/ tools/` clean. Wire-format changes need an explicit note in the PR body.
+- **Pull requests:** the PR template lists the merge checklist. Each PR should keep `zig build test` green with zero leaks and `zig fmt --check src/ tools/` clean. Wire-format changes need an explicit note in the PR body.
 - **Larger proposals:** open a discussion first so we can align on the wire-format impact before any code lands.
 
 See [CHANGELOG.md](./CHANGELOG.md) for what's in each release.
