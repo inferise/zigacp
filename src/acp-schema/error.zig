@@ -61,6 +61,6 @@ test "Error stringifies without data when null" {
     const e: Error = .{ .code = method_not_found, .message = "nope" };
     const out = try std.json.Stringify.valueAlloc(std.testing.allocator, e, .{ .emit_null_optional_fields = false });
     defer std.testing.allocator.free(out);
-    try std.testing.expect(std.mem.indexOf(u8, out, "data") == null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "-32601") != null);
+    try std.testing.expect(std.mem.find(u8, out, "data") == null);
+    try std.testing.expect(std.mem.find(u8, out, "-32601") != null);
 }

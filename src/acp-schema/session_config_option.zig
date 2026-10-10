@@ -1,8 +1,9 @@
 //! Session settings a client can change mid-session, such as the model.
 //!
-//! ACP's stable shape is `select`, whose options come either as one flat list
-//! or as named groups. Any other shape — the unstable `boolean` one, or a newer
-//! revision's — and any `select` this revision can't read land in `unknown`,
+//! ACP's stable shapes are `select`, whose options come either as one flat list
+//! or as named groups, and `boolean`, an on/off toggle (stabilized 2026-07-06).
+//! Any other shape — a newer revision's — and any option this revision can't
+//! read land in `unknown`,
 //! so a single unfamiliar option never fails the `session/new` carrying it.
 //! `category` is an open string (`mode`, `model`, `model_config`,
 //! `thought_level`, or anything else).
@@ -18,6 +19,8 @@ pub const SessionConfigSelectOption = struct {
     value: []const u8,
     name: []const u8,
     description: ?[]const u8 = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
 /// A named group of select values.
@@ -96,6 +99,8 @@ pub const SessionConfigSelect = struct {
     category: ?[]const u8 = null,
     current_value: []const u8,
     options: SessionConfigSelectOptions,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 
     /// Reports whether `value` is one the option offers, in any group.
     ///
@@ -176,23 +181,79 @@ pub const SessionConfigSelect = struct {
     }
 };
 
+/// A `boolean` option: on or off.
+pub const SessionConfigBoolean = struct {
+    const Self = @This();
+
+    id: []const u8,
+    name: []const u8,
+    description: ?[]const u8 = null,
+    category: ?[]const u8 = null,
+    current_value: bool,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
+
+    /// Writes the struct under its camelCase wire keys.
+    ///
+    /// Parameters:
+    /// - `self`: the struct.
+    /// - `jw`: the JSON writer.
+    ///
+    /// Return: nothing; propagates the writer's failure.
+    pub fn jsonStringify(self: *const Self, jw: anytype) !void {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        try mod.WireCase.stringify(Self, self, jw);
+    }
+
+    /// Parses the struct from a token stream keyed by wire names.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns everything parsed.
+    /// - `source`: the token stream.
+    /// - `options`: the caller's parse options.
+    ///
+    /// Return: the struct; propagates a parse failure.
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Self {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        return mod.WireCase.parse(Self, allocator, source, options);
+    }
+
+    /// Parses the struct from a JSON value keyed by wire names.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns everything parsed.
+    /// - `source`: the JSON value.
+    /// - `options`: the caller's parse options.
+    ///
+    /// Return: the struct; propagates a parse failure.
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Self {
+        log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
+
+        return mod.WireCase.parseFromValue(Self, allocator, source, options);
+    }
+};
+
 /// A session setting the client can change, tagged on the wire by `type`.
 pub const SessionConfigOption = union(enum) {
     const Self = @This();
 
     select: SessionConfigSelect,
+    boolean: SessionConfigBoolean,
     /// Forward-compat: a shape this revision doesn't model, or a `select` it can't read.
     unknown: mod.RawValue,
 
-    /// Parses a `select` from everything but `type`.
+    /// Parses one shape of option from everything but `type`.
     ///
     /// Parameters:
+    /// - `T`: the shape.
     /// - `allocator`: owns everything parsed.
     /// - `source`: the option object.
     /// - `options`: the caller's parse options.
     ///
-    /// Return: the select, or null when the object doesn't fit the shape; propagates allocation failure.
-    fn parseSelect(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) error{OutOfMemory}!?SessionConfigSelect {
+    /// Return: the option, or null when the object doesn't fit the shape; propagates allocation failure.
+    fn parseShape(comptime T: type, allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) error{OutOfMemory}!?T {
         log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
 
         var fields: std.json.ObjectMap = .empty;
@@ -202,10 +263,10 @@ pub const SessionConfigOption = union(enum) {
             if (std.mem.eql(u8, entry.key_ptr.*, "type")) continue;
             fields.putAssumeCapacity(entry.key_ptr.*, entry.value_ptr.*);
         }
-        return std.json.parseFromValueLeaky(SessionConfigSelect, allocator, .{ .object = fields }, options) catch |err| switch (err) {
+        return std.json.parseFromValueLeaky(T, allocator, .{ .object = fields }, options) catch |err| switch (err) {
             error.OutOfMemory => error.OutOfMemory,
             else => {
-                log.warn("keeping an unreadable select option as unknown [{s}]", .{@errorName(err)});
+                log.warn("keeping an unreadable config option as unknown [{s}]", .{@errorName(err)});
                 return null;
             },
         };
@@ -227,6 +288,13 @@ pub const SessionConfigOption = union(enum) {
                 try jw.objectField("type");
                 try jw.write("select");
                 try mod.WireCase.stringifyFields(SessionConfigSelect, select, jw);
+                try jw.endObject();
+            },
+            .boolean => |*toggle| {
+                try jw.beginObject();
+                try jw.objectField("type");
+                try jw.write("boolean");
+                try mod.WireCase.stringifyFields(SessionConfigBoolean, toggle, jw);
                 try jw.endObject();
             },
             .unknown => |raw| try jw.write(raw),
@@ -262,7 +330,10 @@ pub const SessionConfigOption = union(enum) {
         if (source != .object) return error.UnexpectedToken;
         const kind = source.object.get("type") orelse return .{ .unknown = .{ .value = source } };
         if (kind == .string and std.mem.eql(u8, kind.string, "select")) {
-            if (try parseSelect(allocator, source, options)) |select| return .{ .select = select };
+            if (try parseShape(SessionConfigSelect, allocator, source, options)) |select| return .{ .select = select };
+        }
+        if (kind == .string and std.mem.eql(u8, kind.string, "boolean")) {
+            if (try parseShape(SessionConfigBoolean, allocator, source, options)) |toggle| return .{ .boolean = toggle };
         }
         return .{ .unknown = .{ .value = source } };
     }
@@ -292,19 +363,24 @@ test "grouped options parse and are searched across groups" {
     try std.testing.expect(parsed.value.select.offers("b"));
 }
 
-test "a boolean or malformed option is kept as unknown, not refused" {
+test "a boolean option parses; a malformed or unfamiliar one is kept as unknown, not refused" {
     // The malformed select is warned about by design; keep that out of the test output.
     const saved_level = std.testing.log_level;
     std.testing.log_level = .err;
     defer std.testing.log_level = saved_level;
 
     const src =
-        \\[{"id":"fast","name":"Fast","type":"boolean","currentValue":true},{"id":"m","name":"M","type":"select","options":[]}]
+        \\[{"id":"fast","name":"Fast","type":"boolean","currentValue":true},{"id":"m","name":"M","type":"select","options":[]},{"id":"t","name":"T","type":"slider"}]
     ;
     const parsed = try std.json.parseFromSlice([]const SessionConfigOption, std.testing.allocator, src, .{});
     defer parsed.deinit();
-    try std.testing.expect(parsed.value[0] == .unknown);
+    try std.testing.expect(parsed.value[0].boolean.current_value);
     try std.testing.expect(parsed.value[1] == .unknown);
+    try std.testing.expect(parsed.value[2] == .unknown);
+
+    const out = try std.json.Stringify.valueAlloc(std.testing.allocator, parsed.value[0], .{ .emit_null_optional_fields = false });
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("{\"type\":\"boolean\",\"id\":\"fast\",\"name\":\"Fast\",\"currentValue\":true}", out);
 }
 
 test "a select round-trips with its type first" {

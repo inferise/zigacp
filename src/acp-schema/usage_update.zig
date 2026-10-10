@@ -1,15 +1,11 @@
 //! A session's token occupancy and, optionally, what it has cost so far.
 //!
-//! Unstable: `usage_update` is only parsed or emitted as a `SessionUpdate`
-//! variant when built with `-Dunstable_session_usage=true`. Without it the
-//! update lands in `SessionUpdate.unknown`, as any unrecognised one does.
+//! Stable since ACP stabilized `usage_update` (2026-06-05); it was once
+//! behind `-Dunstable_session_usage`.
 
 const std = @import("std");
 const log = std.log.scoped(.acp_schema_usage_update);
 const mod = @import("module.zig");
-
-/// Whether `usage_update` is part of the protocol surface in this build.
-pub const enabled = mod.build_options.unstable_session_usage;
 
 /// What a session has cost so far.
 pub const UsageCost = struct {
@@ -18,6 +14,8 @@ pub const UsageCost = struct {
     amount: f64,
     /// ISO 4217, e.g. "USD".
     currency: []const u8,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
 /// The `usage_update` payload.
@@ -29,6 +27,8 @@ pub const UsageUpdate = struct {
     /// The context window's size in tokens.
     size: u64,
     cost: ?UsageCost = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 
     /// Returns how much of the context window is in use.
     ///
@@ -48,7 +48,6 @@ pub const UsageUpdate = struct {
 // Unit Tests
 
 test "usage reports the share of the window in use" {
-    if (!enabled) return error.SkipZigTest;
     const src =
         \\{"used":50000,"size":200000,"cost":{"amount":0.06,"currency":"USD"}}
     ;

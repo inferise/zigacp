@@ -12,6 +12,10 @@ pub const ContentChunk = struct {
     const Self = @This();
 
     content: mod.ContentBlock,
+    /// The message this chunk belongs to; chunks sharing one form one message.
+    message_id: ?[]const u8 = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
 /// The payload of a `plan` update.
@@ -26,6 +30,8 @@ pub const AvailableCommandsUpdate = struct {
     const Self = @This();
 
     available_commands: []const mod.AvailableCommand,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 
     /// Writes the struct under its camelCase wire keys.
     ///
@@ -74,6 +80,8 @@ pub const CurrentModeUpdate = struct {
     const Self = @This();
 
     current_mode_id: []const u8,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 
     /// Writes the struct under its camelCase wire keys.
     ///
@@ -122,6 +130,8 @@ pub const ConfigOptionUpdate = struct {
     const Self = @This();
 
     config_options: []const mod.SessionConfigOption,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 
     /// Writes the struct under its camelCase wire keys.
     ///
@@ -171,6 +181,8 @@ pub const SessionInfoUpdate = struct {
 
     title: ?[]const u8 = null,
     updated_at: ?[]const u8 = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 
     /// Writes the struct under its camelCase wire keys.
     ///
@@ -228,8 +240,7 @@ pub const SessionUpdate = union(enum) {
     currentModeUpdate: CurrentModeUpdate,
     configOptionUpdate: ConfigOptionUpdate,
     sessionInfoUpdate: SessionInfoUpdate,
-    /// Unstable, behind `-Dunstable_session_usage`; uninhabited without it, so the tag parses as `unknown`.
-    usageUpdate: if (mod.usage_update.enabled) mod.usage_update.UsageUpdate else noreturn,
+    usageUpdate: mod.usage_update.UsageUpdate,
     /// Forward-compat: unknown variants from peers running newer revisions.
     unknown: mod.RawValue,
 
@@ -244,22 +255,30 @@ pub const SessionUpdate = union(enum) {
         .{ "usage_update", "usageUpdate" },
     };
 
-    /// Writes a chunk variant: its tag, then its content block.
+    /// Writes a chunk variant: its tag, then its content block and any message id and `_meta`.
     ///
     /// Parameters:
     /// - `jw`: the JSON writer.
     /// - `tag`: the wire tag.
-    /// - `content`: the chunk's content.
+    /// - `chunk`: the chunk.
     ///
     /// Return: nothing; propagates the writer's failure.
-    fn writeChunk(jw: anytype, comptime tag: []const u8, content: *const mod.ContentBlock) !void {
+    fn writeChunk(jw: anytype, comptime tag: []const u8, chunk: *const ContentChunk) !void {
         log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
 
         try jw.beginObject();
         try jw.objectField("sessionUpdate");
         try jw.write(tag);
         try jw.objectField("content");
-        try jw.write(content.*);
+        try jw.write(chunk.content);
+        if (chunk.message_id) |id| {
+            try jw.objectField("messageId");
+            try jw.write(id);
+        }
+        if (chunk._meta) |meta| {
+            try jw.objectField("_meta");
+            try jw.write(meta);
+        }
         try jw.endObject();
     }
 
@@ -278,11 +297,11 @@ pub const SessionUpdate = union(enum) {
         try jw.objectField("sessionUpdate");
         try jw.write(tag);
         const T = @TypeOf(payload.*);
-        inline for (@typeInfo(T).@"struct".fields) |field| {
-            const v = @field(payload.*, field.name);
-            const skip = @typeInfo(field.type) == .optional and v == null;
+        inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |name, F| {
+            const v = @field(payload.*, name);
+            const skip = @typeInfo(F) == .optional and v == null;
             if (!skip) {
-                try jw.objectField(comptime mod.WireCase.key(field.name));
+                try jw.objectField(comptime mod.WireCase.key(name));
                 try jw.write(v);
             }
         }
@@ -353,13 +372,12 @@ pub const SessionUpdate = union(enum) {
         log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
 
         switch (self.*) {
-            .userMessageChunk => |*c| try writeChunk(jw, "user_message_chunk", &c.content),
-            .agentMessageChunk => |*c| try writeChunk(jw, "agent_message_chunk", &c.content),
-            .agentThoughtChunk => |*c| try writeChunk(jw, "agent_thought_chunk", &c.content),
+            .userMessageChunk => |*c| try writeChunk(jw, "user_message_chunk", c),
+            .agentMessageChunk => |*c| try writeChunk(jw, "agent_message_chunk", c),
+            .agentThoughtChunk => |*c| try writeChunk(jw, "agent_thought_chunk", c),
             .plan => |*p| try writePlan(jw, &p.plan),
             .unknown => |raw| try jw.write(raw),
             inline else => |*payload, variant| {
-                if (comptime @TypeOf(payload.*) == noreturn) unreachable;
                 const tag = comptime wireTag(@tagName(variant));
                 try writeFlat(jw, tag, payload);
             },
@@ -403,7 +421,9 @@ pub const SessionUpdate = union(enum) {
         {
             const content_v = source.object.get("content") orelse return error.MissingField;
             const cb = try std.json.parseFromValueLeaky(mod.ContentBlock, allocator, content_v, options);
-            const chunk: ContentChunk = .{ .content = cb };
+            const message_id = try std.json.parseFromValueLeaky(?[]const u8, allocator, source.object.get("messageId") orelse .null, options);
+            const meta = try std.json.parseFromValueLeaky(?mod.RawValue, allocator, source.object.get("_meta") orelse .null, options);
+            const chunk: ContentChunk = .{ .content = cb, .message_id = message_id, ._meta = meta };
             if (std.mem.eql(u8, tag, "user_message_chunk")) return .{ .userMessageChunk = chunk };
             if (std.mem.eql(u8, tag, "agent_message_chunk")) return .{ .agentMessageChunk = chunk };
             return .{ .agentThoughtChunk = chunk };
@@ -420,7 +440,6 @@ pub const SessionUpdate = union(enum) {
 
         // The flat variants: every field but the tag belongs to the payload.
         inline for (flat_variants) |variant| {
-            if (comptime @FieldType(Self, variant[1]) == noreturn) continue;
             if (std.mem.eql(u8, tag, variant[0])) {
                 const Payload = @FieldType(Self, variant[1]);
                 const inner = try stripTag(allocator, source);
@@ -446,7 +465,7 @@ test "a message chunk round-trips under its wire tag" {
 
     const out = try std.json.Stringify.valueAlloc(std.testing.allocator, parsed.value, .{});
     defer std.testing.allocator.free(out);
-    try std.testing.expect(std.mem.indexOf(u8, out, "\"sessionUpdate\":\"agent_message_chunk\"") != null);
+    try std.testing.expect(std.mem.find(u8, out, "\"sessionUpdate\":\"agent_message_chunk\"") != null);
 }
 
 test "user and thought chunks pick their own variants" {
@@ -484,12 +503,12 @@ test "a tool call carries its input, output and _meta, and leaves an absent _met
 
     const written = try std.json.Stringify.valueAlloc(std.testing.allocator, parsed.value, .{});
     defer std.testing.allocator.free(written);
-    try std.testing.expect(std.mem.indexOf(u8, written, "\"_meta\":{\"zigclaude\"") != null);
+    try std.testing.expect(std.mem.find(u8, written, "\"_meta\":{\"zigclaude\"") != null);
 
     const done = SessionUpdate{ .toolCallUpdate = .{ .toolCallId = .{ .value = "c1" }, .status = .completed } };
     const bare = try std.json.Stringify.valueAlloc(std.testing.allocator, done, .{});
     defer std.testing.allocator.free(bare);
-    try std.testing.expect(std.mem.indexOf(u8, bare, "_meta") == null);
+    try std.testing.expect(std.mem.find(u8, bare, "_meta") == null);
 }
 
 test "a plan keeps its entries" {
@@ -522,7 +541,6 @@ test "the stable v1 status variants decode" {
 }
 
 test "a usage update round-trips flat, omitting an absent cost" {
-    if (!mod.usage_update.enabled) return error.SkipZigTest;
     const u: SessionUpdate = .{ .usageUpdate = .{ .used = 53000, .size = 200000 } };
     const out = try std.json.Stringify.valueAlloc(std.testing.allocator, u, .{});
     defer std.testing.allocator.free(out);
@@ -540,11 +558,23 @@ test "a mode change writes its camelCase key under its snake_case tag" {
     try std.testing.expectEqualStrings("{\"sessionUpdate\":\"current_mode_update\",\"currentModeId\":\"plan\"}", out);
 }
 
-test "a usage update is unknown unless the unstable flag is on" {
+test "a usage update with a cost decodes as stable" {
     const src =
-        \\{"sessionUpdate":"usage_update","used":1,"size":2}
+        \\{"sessionUpdate":"usage_update","used":1,"size":2,"cost":{"amount":0.5,"currency":"USD"}}
     ;
     const parsed = try std.json.parseFromSlice(SessionUpdate, std.testing.allocator, src, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(mod.usage_update.enabled, parsed.value != .unknown);
+    try std.testing.expectEqualStrings("USD", parsed.value.usageUpdate.cost.?.currency);
+}
+
+test "a chunk keeps its message id and _meta both ways" {
+    const src =
+        \\{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hi"},"messageId":"m1","_meta":{"x":{"n":1}}}
+    ;
+    const parsed = try std.json.parseFromSlice(SessionUpdate, std.testing.allocator, src, .{});
+    defer parsed.deinit();
+    try std.testing.expectEqualStrings("m1", parsed.value.agentMessageChunk.message_id.?);
+    const out = try std.json.Stringify.valueAlloc(std.testing.allocator, parsed.value, .{});
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings(src, out);
 }

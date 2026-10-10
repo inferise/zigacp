@@ -14,6 +14,9 @@
 //! StdioTransport is the process-to-process counterpart: a reader task queues
 //! frames from one file handle so reads can be polled mid-turn, exactly as
 //! FrameTransport's can.
+//!
+//! LocalSeam serves an agent on one end of a FrameTransport, with the
+//! teardown order that strands no task.
 
 const std = @import("std");
 
@@ -34,6 +37,9 @@ pub const FileTransport = file_transport.FileTransport;
 
 pub const stdio_transport = @import("stdio_transport.zig");
 pub const StdioTransport = stdio_transport.StdioTransport;
+
+pub const local_seam = @import("local_seam.zig");
+pub const LocalSeam = local_seam.LocalSeam;
 
 pub const child_mod = @import("child.zig");
 pub const Child = child_mod.Child;

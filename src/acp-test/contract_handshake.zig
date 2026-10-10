@@ -180,13 +180,13 @@ test "Connection records frames into an attached trace buffer" {
     var client_it = client_trace.iterator();
     const c1 = client_it.next().?;
     try std.testing.expectEqual(acp.TraceDirection.outbound, c1.direction);
-    try std.testing.expect(std.mem.indexOf(u8, c1.bytes, "session/cancel") != null);
+    try std.testing.expect(std.mem.find(u8, c1.bytes, "session/cancel") != null);
     try std.testing.expect(client_it.next() == null);
 
     var agent_it = agent_trace.iterator();
     const a1 = agent_it.next().?;
     try std.testing.expectEqual(acp.TraceDirection.inbound, a1.direction);
-    try std.testing.expect(std.mem.indexOf(u8, a1.bytes, "session/cancel") != null);
+    try std.testing.expect(std.mem.find(u8, a1.bytes, "session/cancel") != null);
     try std.testing.expect(agent_it.next() == null);
 
     try std.testing.expect(agent_ctx.seen_cancel);

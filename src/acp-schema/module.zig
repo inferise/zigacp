@@ -71,12 +71,14 @@ pub const SessionConfigSelect = session_config_option.SessionConfigSelect;
 pub const SessionConfigSelectOptions = session_config_option.SessionConfigSelectOptions;
 pub const SessionConfigSelectGroup = session_config_option.SessionConfigSelectGroup;
 pub const SessionConfigSelectOption = session_config_option.SessionConfigSelectOption;
+pub const SessionConfigBoolean = session_config_option.SessionConfigBoolean;
 
 pub const available_command = @import("available_command.zig");
 pub const AvailableCommand = available_command.AvailableCommand;
 
-// Unstable: `usage_update.enabled` says whether `SessionUpdate` carries it.
 pub const usage_update = @import("usage_update.zig");
+pub const UsageUpdate = usage_update.UsageUpdate;
+pub const UsageCost = usage_update.UsageCost;
 
 pub const session_update = @import("session_update.zig");
 pub const SessionUpdate = session_update.SessionUpdate;
@@ -99,6 +101,7 @@ pub const ClientResponse = routing.ClientResponse;
 pub const ClientNotification = routing.ClientNotification;
 
 pub const protocol_level = @import("protocol_level.zig");
+pub const CancelRequestNotification = protocol_level.CancelRequestNotification;
 pub const elicitation = @import("elicitation.zig");
 pub const nes = @import("nes.zig");
 pub const unstable_session = @import("unstable_session.zig");

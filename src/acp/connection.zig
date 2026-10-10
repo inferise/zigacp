@@ -11,6 +11,11 @@ const log = std.log.scoped(.acp_connection);
 const mod = @import("module.zig");
 const schema = @import("acp-schema");
 
+/// How outgoing params are written. ACP marks most optional fields absent-or-set,
+/// not nullable (`additionalDirectories`, `terminal`, `mcpCapabilities`), so an
+/// unset optional is left out rather than written as `null`.
+pub const wire_options: std.json.Stringify.Options = .{ .emit_null_optional_fields = false };
+
 /// A JSON-RPC error, as a handler's failure is answered.
 pub const ErrorReply = struct {
     const Self = @This();
@@ -83,7 +88,7 @@ pub const Connection = struct {
         w.writeAll("{\"jsonrpc\":\"2.0\",\"method\":") catch return error.OutOfMemory;
         std.json.Stringify.value(method, .{}, w) catch return error.OutOfMemory;
         w.writeAll(",\"params\":") catch return error.OutOfMemory;
-        std.json.Stringify.value(params, .{}, w) catch return error.OutOfMemory;
+        std.json.Stringify.value(params, wire_options, w) catch return error.OutOfMemory;
         w.writeAll("}") catch return error.OutOfMemory;
 
         try self.writeTraced(buf.written());
@@ -104,7 +109,7 @@ pub const Connection = struct {
             w.print("{{\"jsonrpc\":\"2.0\",\"id\":{d},\"method\":", .{id}) catch return error.OutOfMemory;
             std.json.Stringify.value(method, .{}, w) catch return error.OutOfMemory;
             w.writeAll(",\"params\":") catch return error.OutOfMemory;
-            std.json.Stringify.value(params, .{}, w) catch return error.OutOfMemory;
+            std.json.Stringify.value(params, wire_options, w) catch return error.OutOfMemory;
             w.writeAll("}") catch return error.OutOfMemory;
             try self.writeTraced(buf.written());
         }
@@ -134,11 +139,7 @@ pub const Connection = struct {
                         return error.PeerError;
                     }
                     const result_v = obj.get("result") orelse return error.InvalidMessage;
-                    // Lenient exactly as inbound params already are (`typed.zig`):
-                    // a peer adding a field — a newer schema, or its own `_meta`
-                    // extras — must not turn a good reply into `InvalidParams`.
-                    return std.json.parseFromValue(ResultT, self.allocator, result_v, .{ .ignore_unknown_fields = true }) catch
-                        return error.InvalidParams;
+                    return ownedResult(ResultT, self.allocator, result_v);
                 }
                 // Not our response — could be an incoming request from peer.
                 if (obj.get("method")) |m_v| {
@@ -337,6 +338,34 @@ pub const Connection = struct {
     }
 };
 
+/// Decodes a reply's result into a value that owns everything it holds.
+///
+/// Parameters:
+/// - `ResultT`: the result's type; a `std.json.Value` or `RawValue` in it is kept whole.
+/// - `allocator`: backs the result's arena.
+/// - `result_v`: the result, borrowed from a frame about to be freed.
+///
+/// Return: the result, caller `deinit`s it; `error.InvalidParams` when it does not fit `ResultT`.
+fn ownedResult(comptime ResultT: type, allocator: std.mem.Allocator, result_v: std.json.Value) mod.AcpError!std.json.Parsed(ResultT) {
+    const arena = allocator.create(std.heap.ArenaAllocator) catch return error.OutOfMemory;
+    arena.* = .init(allocator);
+    errdefer {
+        arena.deinit();
+        allocator.destroy(arena);
+    }
+    // `parseFromValue` copies strings but not a `Value`, which would then point
+    // into the frame; decoding from a copy in the result's own arena keeps both.
+    const copy = try schema.serde_util.cloneValue(arena.allocator(), result_v);
+    // Lenient exactly as inbound params already are (`typed.zig`): a peer
+    // adding a field — a newer schema, or its own `_meta` extras — must not
+    // turn a good reply into `InvalidParams`.
+    const value = std.json.parseFromValueLeaky(ResultT, arena.allocator(), copy, .{ .ignore_unknown_fields = true }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return error.InvalidParams,
+    };
+    return .{ .arena = arena, .value = value };
+}
+
 fn matchId(v: std.json.Value, id: i64) bool {
     return switch (v) {
         .integer => |i| i == id,
@@ -357,4 +386,20 @@ test "a handler's failure is answered with its own code and a message that says 
     try std.testing.expectEqualStrings("the agent is not running", Connection.errorReply(error.AgentGone).message);
     try std.testing.expectEqual(@as(i32, -32002), Connection.errorReply(error.SessionNotFound).code);
     try std.testing.expectEqual(@as(i32, -32603), Connection.errorReply(error.OutOfMemory).code);
+}
+
+test "a request's raw result outlives the frame it arrived in" {
+    const allocator = std.testing.allocator;
+    var peer = mod.ScriptedPeer{ .allocator = allocator, .replies = &.{
+        \\{"jsonrpc":"2.0","id":1,"result":{"sessionId":"s-1","_meta":{"x":{"deep":["kept"]}}}}
+    } };
+    defer peer.deinit();
+
+    var connection = Connection.init(allocator, peer.transport());
+    const answer = try connection.request(std.json.Value, "session/new", .{ .cwd = "/tmp" });
+    defer answer.deinit();
+    const deep = answer.value.object.get("_meta").?.object.get("x").?.object.get("deep").?.array.items[0];
+    try std.testing.expectEqualStrings("kept", deep.string);
+    // The params went out without null optionals.
+    try std.testing.expectEqualStrings("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session/new\",\"params\":{\"cwd\":\"/tmp\"}}", peer.sent.items[0]);
 }

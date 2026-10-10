@@ -221,5 +221,5 @@ test "Response stringifies result" {
     };
     const out = try std.json.Stringify.valueAlloc(std.testing.allocator, r, .{});
     defer std.testing.allocator.free(out);
-    try std.testing.expect(std.mem.indexOf(u8, out, "\"result\":true") != null);
+    try std.testing.expect(std.mem.find(u8, out, "\"result\":true") != null);
 }

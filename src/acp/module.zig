@@ -37,6 +37,14 @@ pub const Frame = transport.Frame;
 pub const connection = @import("connection.zig");
 pub const Connection = connection.Connection;
 pub const ErrorReply = connection.ErrorReply;
+pub const wire_options = connection.wire_options;
+
+pub const raw_peer = @import("raw_peer.zig");
+pub const RawPeer = raw_peer.RawPeer;
+pub const RawMessage = raw_peer.RawMessage;
+
+pub const scripted_peer = @import("scripted_peer.zig");
+pub const ScriptedPeer = scripted_peer.ScriptedPeer;
 
 pub const capabilities = @import("capabilities.zig");
 

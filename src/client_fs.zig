@@ -272,10 +272,10 @@ pub const ClientFs = struct {
     fn fileUrlOwned(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]u8 {
         // Joined rather than resolved: a `..` is left for the filesystem to
         // follow, as it was when this read through the working directory.
-        const absolute = if (std.fs.path.isAbsolute(path)) try allocator.dupe(u8, path) else blk: {
+        const absolute = if (std.Io.Dir.path.isAbsolute(path)) try allocator.dupe(u8, path) else blk: {
             const cwd = try std.process.currentPathAlloc(io, allocator);
             defer allocator.free(cwd);
-            break :blk try std.fs.path.join(allocator, &.{ cwd, path });
+            break :blk try std.Io.Dir.path.join(allocator, &.{ cwd, path });
         };
         defer allocator.free(absolute);
 
@@ -307,7 +307,7 @@ test {
 ///
 /// Return: the path, caller-owned; propagates allocation failure.
 fn tempPathOwned(allocator: std.mem.Allocator, tmp: *std.testing.TmpDir, name: []const u8) ![]u8 {
-    return std.fmt.allocPrint(allocator, ".zig-cache/tmp/{s}/{s}", .{ tmp.sub_path, name });
+    return allocator.print(".zig-cache/tmp/{s}/{s}", .{ tmp.sub_path, name });
 }
 
 test "a file written through the client reads back through it" {
@@ -370,7 +370,7 @@ test "an absolute path with a space, a percent and a hash is served as written" 
 
     const root = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(root);
-    const path = try std.fs.path.join(allocator, &.{ root, "odd name 100%#1.txt" });
+    const path = try std.Io.Dir.path.join(allocator, &.{ root, "odd name 100%#1.txt" });
     defer allocator.free(path);
 
     var fs = ClientFs{ .io = std.testing.io };

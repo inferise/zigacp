@@ -69,10 +69,10 @@ fn writeCatalog(allocator: std.mem.Allocator, io: std.Io, environ: std.process.E
     log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
 
     // Joined rather than resolved, so a `..` is left for the filesystem to follow.
-    const absolute = if (std.fs.path.isAbsolute(path)) try allocator.dupe(u8, path) else blk: {
+    const absolute = if (std.Io.Dir.path.isAbsolute(path)) try allocator.dupe(u8, path) else blk: {
         const cwd = try std.process.currentPathAlloc(io, allocator);
         defer allocator.free(cwd);
-        break :blk try std.fs.path.join(allocator, &.{ cwd, path });
+        break :blk try std.Io.Dir.path.join(allocator, &.{ cwd, path });
     };
     defer allocator.free(absolute);
 
@@ -113,14 +113,14 @@ const NamedString = struct { name: []const u8, value: []const u8 };
 fn collectMethodsFromNamespace(comptime Namespace: type, comptime prefix: []const u8) []const NamedString {
     comptime {
         var out: []const NamedString = &.{};
-        for (@typeInfo(Namespace).@"struct".decls) |d| {
-            if (!std.mem.startsWith(u8, d.name, "method_")) continue;
-            const v = @field(Namespace, d.name);
+        for (@typeInfo(Namespace).@"struct".decl_names) |name| {
+            if (!std.mem.startsWith(u8, name, "method_")) continue;
+            const v = @field(Namespace, name);
             const VT = @TypeOf(v);
             switch (@typeInfo(VT)) {
                 .pointer => |p| {
                     if (p.size == .slice and p.child == u8) {
-                        out = out ++ &[_]NamedString{.{ .name = prefix ++ "." ++ d.name, .value = v }};
+                        out = out ++ &[_]NamedString{.{ .name = prefix ++ "." ++ name, .value = v }};
                     }
                 },
                 else => {},
@@ -174,14 +174,14 @@ fn collectTypes() []const NamedType {
     comptime {
         @setEvalBranchQuota(50_000);
         var out: []const NamedType = &.{};
-        for (@typeInfo(schema).@"struct".decls) |d| {
-            const v = @field(schema, d.name);
+        for (@typeInfo(schema).@"struct".decl_names) |name| {
+            const v = @field(schema, name);
             const VT = @TypeOf(v);
             if (VT != type) continue;
             const T = v;
             switch (@typeInfo(T)) {
                 .@"struct", .@"enum", .@"union" => {
-                    out = out ++ &[_]NamedType{.{ .name = d.name, .T = T }};
+                    out = out ++ &[_]NamedType{.{ .name = name, .T = T }};
                 },
                 else => {},
             }
@@ -225,8 +225,8 @@ fn emitTypeShape(ws: *std.json.Stringify, comptime T: type, depth: usize) !void 
             const SortedField = struct { name: []const u8, idx: usize };
             const sorted = comptime blk: {
                 @setEvalBranchQuota(50_000);
-                var arr: [s.fields.len]SortedField = undefined;
-                for (s.fields, 0..) |f, i| arr[i] = .{ .name = f.name, .idx = i };
+                var arr: [s.field_names.len]SortedField = undefined;
+                for (s.field_names, 0..) |name, i| arr[i] = .{ .name = name, .idx = i };
                 std.sort.insertion(SortedField, &arr, {}, struct {
                     fn lt(_: void, a: SortedField, b: SortedField) bool {
                         return std.mem.lessThan(u8, a.name, b.name);
@@ -236,10 +236,9 @@ fn emitTypeShape(ws: *std.json.Stringify, comptime T: type, depth: usize) !void 
                 break :blk final;
             };
             inline for (sorted) |sf| {
-                const f = s.fields[sf.idx];
                 // The wire key, not the Zig name: snake_case fields go out camelCase.
-                try ws.objectField(comptime schema.WireCase.key(f.name));
-                try emitFieldType(ws, f.type, f.default_value_ptr != null);
+                try ws.objectField(comptime schema.WireCase.key(s.field_names[sf.idx]));
+                try emitFieldType(ws, s.field_types[sf.idx], s.field_attrs[sf.idx].default_value_ptr != null);
             }
             try ws.endObject();
             try ws.endObject();
@@ -256,8 +255,8 @@ fn emitTypeShape(ws: *std.json.Stringify, comptime T: type, depth: usize) !void 
             const SortedVar = struct { name: []const u8, value: i128 };
             const sv = comptime blk: {
                 @setEvalBranchQuota(50_000);
-                var arr: [e.fields.len]SortedVar = undefined;
-                for (e.fields, 0..) |f, i| arr[i] = .{ .name = f.name, .value = @as(i128, f.value) };
+                var arr: [e.field_names.len]SortedVar = undefined;
+                for (e.field_names, e.field_values, 0..) |name, value, i| arr[i] = .{ .name = name, .value = @as(i128, value) };
                 std.sort.insertion(SortedVar, &arr, {}, struct {
                     fn lt(_: void, a: SortedVar, b: SortedVar) bool {
                         return std.mem.lessThan(u8, a.name, b.name);
@@ -291,8 +290,8 @@ fn emitTypeShape(ws: *std.json.Stringify, comptime T: type, depth: usize) !void 
             const SortedV = struct { name: []const u8, idx: usize };
             const sv = comptime blk: {
                 @setEvalBranchQuota(50_000);
-                var arr: [u.fields.len]SortedV = undefined;
-                for (u.fields, 0..) |f, i| arr[i] = .{ .name = f.name, .idx = i };
+                var arr: [u.field_names.len]SortedV = undefined;
+                for (u.field_names, 0..) |name, i| arr[i] = .{ .name = name, .idx = i };
                 std.sort.insertion(SortedV, &arr, {}, struct {
                     fn lt(_: void, a: SortedV, b: SortedV) bool {
                         return std.mem.lessThan(u8, a.name, b.name);
@@ -302,9 +301,8 @@ fn emitTypeShape(ws: *std.json.Stringify, comptime T: type, depth: usize) !void 
                 break :blk final;
             };
             inline for (sv) |variant| {
-                const f = u.fields[variant.idx];
-                try ws.objectField(f.name);
-                try emitFieldType(ws, f.type, false);
+                try ws.objectField(u.field_names[variant.idx]);
+                try emitFieldType(ws, u.field_types[variant.idx], false);
             }
             try ws.endObject();
             try ws.endObject();

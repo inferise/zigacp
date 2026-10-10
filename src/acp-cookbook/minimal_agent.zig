@@ -11,7 +11,7 @@ const acp_test = @import("acp-test");
 const schema = acp.schema;
 
 pub fn main() !void {
-    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    var gpa: std.heap.SafeAllocator = .init(std.heap.page_allocator, .{});
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -55,8 +55,7 @@ pub fn main() !void {
         const Init = struct { protocolVersion: schema.ProtocolVersion };
         const resp = try readResponse(Init, &client_conn);
         defer resp.deinit();
-        const line = try std.fmt.allocPrint(
-            allocator,
+        const line = try allocator.print(
             "agent replied initialize -> protocolVersion={d}\n",
             .{resp.value.protocolVersion.value},
         );
@@ -73,8 +72,7 @@ pub fn main() !void {
         const Prompt = struct { stopReason: schema.agent.StopReason };
         const resp = try readResponse(Prompt, &client_conn);
         defer resp.deinit();
-        const line = try std.fmt.allocPrint(
-            allocator,
+        const line = try allocator.print(
             "agent replied session/prompt -> stopReason={s}\n",
             .{@tagName(resp.value.stopReason)},
         );

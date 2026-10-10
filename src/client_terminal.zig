@@ -407,7 +407,7 @@ pub const ClientTerminal = struct {
         const run = try self.allocator.create(Run);
         errdefer self.allocator.destroy(run);
 
-        const id = try std.fmt.allocPrint(self.allocator, "term-{d}", .{self.next_id});
+        const id = try self.allocator.print("term-{d}", .{self.next_id});
         errdefer self.allocator.free(id);
 
         var child = try std.process.spawn(self.io, .{
@@ -418,7 +418,8 @@ pub const ClientTerminal = struct {
             .stdout = .pipe,
             .stderr = .pipe,
             // Its own group, so a kill reaches whatever the command started.
-            .pgid = 0,
+            // Windows has no process groups (its `pid_t` is a handle).
+            .pgid = if (comptime builtin.os.tag == .windows) null else 0,
         });
         errdefer child.kill(self.io);
 
@@ -730,6 +731,8 @@ pub const ClientTerminal = struct {
     fn signalName(sig: std.posix.SIG) []const u8 {
         log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
 
+        // Windows' `SIG` has none of the POSIX names below.
+        if (comptime builtin.os.tag == .windows) return "SIGUNKNOWN";
         return switch (sig) {
             .HUP => "SIGHUP",
             .INT => "SIGINT",
@@ -782,8 +785,8 @@ test "a command's output and exit code come back" {
     defer allocator.free(output.output);
 
     // Merged, in whichever order the two pipes delivered.
-    try std.testing.expect(std.mem.indexOf(u8, output.output, "out\n") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output.output, "err\n") != null);
+    try std.testing.expect(std.mem.find(u8, output.output, "out\n") != null);
+    try std.testing.expect(std.mem.find(u8, output.output, "err\n") != null);
     try std.testing.expect(!output.truncated);
     try std.testing.expectEqual(@as(?i32, 3), output.exitStatus.?.exitCode);
 
@@ -861,7 +864,7 @@ test "kill stops a command and everything it started" {
     const output = try terminal.snapshot(allocator, id);
     defer allocator.free(output.output);
     defer if (output.exitStatus.?.signal) |name| allocator.free(name);
-    try std.testing.expect(std.mem.indexOf(u8, output.output, "never") == null);
+    try std.testing.expect(std.mem.find(u8, output.output, "never") == null);
 }
 
 test "teardown reaps a terminal the agent never released" {

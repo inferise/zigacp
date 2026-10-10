@@ -64,11 +64,11 @@ pub const WireCase = struct {
     pub fn stringifyFields(comptime T: type, value: *const T, jw: anytype) !void {
         log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
 
-        inline for (@typeInfo(T).@"struct".fields) |field| {
-            const v = @field(value.*, field.name);
-            const skip = @typeInfo(field.type) == .optional and v == null and !jw.options.emit_null_optional_fields;
+        inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |name, F| {
+            const v = @field(value.*, name);
+            const skip = @typeInfo(F) == .optional and v == null and !jw.options.emit_null_optional_fields;
             if (!skip) {
-                try jw.objectField(comptime key(field.name));
+                try jw.objectField(comptime key(name));
                 try jw.write(v);
             }
         }
@@ -103,13 +103,13 @@ pub const WireCase = struct {
         log.debug("{s}:{d} :: {s}", .{ @src().file, @src().line, @src().fn_name });
 
         if (source != .object) return error.UnexpectedToken;
-        const fields = @typeInfo(T).@"struct".fields;
+        const info = @typeInfo(T).@"struct";
 
         if (!options.ignore_unknown_fields) {
             var it = source.object.iterator();
             while (it.next()) |entry| {
-                const known = inline for (fields) |field| {
-                    if (std.mem.eql(u8, entry.key_ptr.*, comptime key(field.name))) break true;
+                const known = inline for (info.field_names) |name| {
+                    if (std.mem.eql(u8, entry.key_ptr.*, comptime key(name))) break true;
                 } else false;
                 if (!known) return error.UnknownField;
             }
@@ -117,11 +117,11 @@ pub const WireCase = struct {
 
         // SAFETY: every field is assigned below or the parse returns an error first.
         var result: T = undefined;
-        inline for (fields) |field| {
-            if (source.object.get(comptime key(field.name))) |v| {
-                @field(result, field.name) = try std.json.innerParseFromValue(field.type, allocator, v, options);
-            } else if (comptime field.defaultValue()) |default| {
-                @field(result, field.name) = default;
+        inline for (info.field_names, info.field_types, info.field_attrs) |name, F, attrs| {
+            if (source.object.get(comptime key(name))) |v| {
+                @field(result, name) = try std.json.innerParseFromValue(F, allocator, v, options);
+            } else if (comptime attrs.defaultValue(F)) |default| {
+                @field(result, name) = default;
             } else {
                 return error.MissingField;
             }

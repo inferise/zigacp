@@ -51,6 +51,38 @@ pub const NotificationOutcome = union(enum) {
     drop,
 };
 
+/// A reply on its way, with the request it answers.
+pub const ReplyContext = struct {
+    /// Which way the reply travels.
+    direction: Direction,
+    /// The method of the request it answers.
+    method: []const u8,
+    /// The reply's `result`; an error reply is not shown to reply interceptors.
+    result: std.json.Value,
+    /// Per-call arena.
+    allocator: std.mem.Allocator,
+};
+
+pub const ReplyOutcome = union(enum) {
+    /// Forward the (possibly rewritten) result.
+    pass: std.json.Value,
+};
+
+/// Sees a reply on its way, knowing the request it answers: what a proxy needs
+/// to add to a `session/new` result or a prompt's usage.
+pub const ReplyInterceptor = struct {
+    ptr: *anyopaque,
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        on_reply: *const fn (ctx: *anyopaque, call: ReplyContext) AcpError!ReplyOutcome,
+    };
+
+    pub fn onReply(self: ReplyInterceptor, call: ReplyContext) AcpError!ReplyOutcome {
+        return self.vtable.on_reply(self.ptr, call);
+    }
+};
+
 pub const RequestInterceptor = struct {
     ptr: *anyopaque,
     vtable: *const VTable,

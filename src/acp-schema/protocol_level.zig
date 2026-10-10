@@ -1,32 +1,31 @@
-//! Protocol-level control messages.
+//! Protocol-level control messages, served by either side.
 //!
-//! `cancel_request` is gated behind `unstable_cancel_request` — the v2
-//! cancellation flow is still being shaped upstream and shouldn't appear in
-//! stable surface area.
+//! `$/cancel_request` asks the peer to stop work on one of its pending
+//! requests. ACP stabilized it on 2026-06-29; it was once behind
+//! `-Dunstable_cancel_request`, under a draft shape (`id`, `reason`).
 
 const std = @import("std");
-const build_options = @import("build_options");
 const RequestId = @import("rpc.zig").RequestId;
+const RawValue = @import("serde_util.zig").RawValue;
 
-pub const cancel_request_enabled = build_options.unstable_cancel_request;
+pub const method_cancel_request: []const u8 = "$/cancel_request";
 
-const cancel_impl = struct {
-    pub const CancelRequest = struct {
-        id: RequestId,
-        reason: ?[]const u8 = null,
-    };
+/// Asks the peer to cancel a request it has not answered yet; a notification.
+pub const CancelRequestNotification = struct {
+    /// The id of the request to cancel.
+    requestId: RequestId,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?RawValue = null,
 };
 
-const cancel_disabled = struct {};
+// -----------------------------------------------------------------------------
+// Unit Tests
 
-pub const cancel = if (cancel_request_enabled) cancel_impl else cancel_disabled;
-
-test "CancelRequest round-trip when enabled" {
-    if (!cancel_request_enabled) return error.SkipZigTest;
+test "a cancel request names the request by id" {
     const src =
-        \\{"id":7,"reason":"user aborted"}
+        \\{"requestId":7}
     ;
-    const parsed = try std.json.parseFromSlice(cancel.CancelRequest, std.testing.allocator, src, .{});
+    const parsed = try std.json.parseFromSlice(CancelRequestNotification, std.testing.allocator, src, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 7), parsed.value.id.integer);
+    try std.testing.expectEqual(@as(i64, 7), parsed.value.requestId.integer);
 }

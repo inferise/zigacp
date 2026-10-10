@@ -1,105 +1,19 @@
 const std = @import("std");
 
 const zon = @import("build.zig.zon");
-
-const Git = struct {
-    const Self = @This();
-
-    /// Clones every missing cloneable dependency and exits 1; returns when none are missing.
-    ///
-    /// Parameters:
-    /// - `b`: the build graph.
-    ///
-    /// Return: nothing when all are present; otherwise never.
-    pub fn cloneDeps(b: *std.Build) if (Self.hasAllDeps()) void else noreturn {
-        if (comptime Self.hasAllDeps()) return;
-        const io = b.graph.io;
-        var missing: usize = 0;
-        var cloned: usize = 0;
-        inline for (@typeInfo(@TypeOf(zon.dependencies)).@"struct".fields) |field| {
-            if (comptime Self.isCloneable(field.name) and !Self.isCloned(field.name)) {
-                const dep = @field(zon.dependencies, field.name);
-                const dest = b.pathFromRoot(dep.path);
-                missing += 1;
-                if (std.Io.Dir.cwd().access(io, dest, .{})) |_| {
-                    std.debug.print("{s} exists but is not a Zig package\n", .{dep.path});
-                } else |err| switch (err) {
-                    error.FileNotFound => if (Self.clone(io, dep.clone, dest)) {
-                        cloned += 1;
-                    } else |clone_err| {
-                        std.debug.print("git clone {s} {s} failed [{any}]\n", .{ dep.clone, dep.path, clone_err });
-                    },
-                    else => std.debug.print("cannot check {s} [{any}]\n", .{ dep.path, err }),
-                }
-            }
-        }
-        if (cloned > 0) std.debug.print("cloned {d} of {d} missing dependencies; re-run zig build\n", .{ cloned, missing });
-        std.process.exit(1);
-    }
-
-    /// Reports whether every cloneable dependency is present.
-    ///
-    /// Return: `true` when none is missing.
-    fn hasAllDeps() bool {
-        inline for (@typeInfo(@TypeOf(zon.dependencies)).@"struct".fields) |field| {
-            if (Self.isCloneable(field.name) and !Self.isCloned(field.name)) return false;
-        }
-        return true;
-    }
-
-    /// Reports whether dependency `name` was present when the build runner was compiled.
-    ///
-    /// Parameters:
-    /// - `name`: the dependency's field name in `build.zig.zon`.
-    ///
-    /// Return: `true` when present, or when this package is not the root.
-    fn isCloned(comptime name: []const u8) bool {
-        const deps = @import("root").dependencies;
-        for (deps.root_deps) |dep| {
-            if (std.mem.eql(u8, dep[0], name)) return @hasDecl(@field(deps.packages, dep[1]), "build_zig");
-        }
-        return true;
-    }
-
-    /// Reports whether dependency `name` declares both a `.path` and a `.clone`.
-    ///
-    /// Parameters:
-    /// - `name`: the dependency's field name in `build.zig.zon`.
-    ///
-    /// Return: `true` when both fields are present.
-    fn isCloneable(comptime name: []const u8) bool {
-        const Dep = @TypeOf(@field(zon.dependencies, name));
-        return @hasField(Dep, "path") and @hasField(Dep, "clone");
-    }
-
-    /// Clones the repository at `url` into `dest`.
-    ///
-    /// Parameters:
-    /// - `io`: IO the `git` child is spawned on.
-    /// - `url`: the repository to clone.
-    /// - `dest`: the directory to clone into.
-    ///
-    /// Return: nothing on success; `error.GitCloneFailed` when `git` fails.
-    fn clone(io: std.Io, url: []const u8, dest: []const u8) !void {
-        var child = try std.process.spawn(io, .{ .argv = &.{ "git", "clone", url, dest } });
-        switch (try child.wait(io)) {
-            .exited => |code| if (code != 0) return error.GitCloneFailed,
-            else => return error.GitCloneFailed,
-        }
-    }
-};
+const zigbuildx = @import("zigbuildx");
 
 pub fn build(b: *std.Build) void {
     // Pre-flight: ensure any local dependencies are cloned
-    Git.cloneDeps(b);
+    zigbuildx.Deps.cloneMissing(b, zon);
 
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
     const flags = collectUnstableFlags(b);
     const build_options = b.addOptions();
-    inline for (@typeInfo(UnstableFlags).@"struct".fields) |field| {
-        build_options.addOption(bool, field.name, @field(flags, field.name));
+    inline for (@typeInfo(UnstableFlags).@"struct".field_names) |name| {
+        build_options.addOption(bool, name, @field(flags, name));
     }
 
     const schema = b.addModule("acp-schema", .{
@@ -151,8 +65,8 @@ pub fn build(b: *std.Build) void {
     // harnesses linking both would mint a second copy.
     const zigstorage_module = b.dependency("zigstorage", .{ .target = target, .optimize = optimize }).module("zigstorage");
 
-    // The barrel: one flat namespace over the four modules the harnesses
-    // consume. See `src/module.zig` for the naming convention.
+    // The barrel: one flat namespace over the five modules the harnesses and
+    // hosts consume. See `src/module.zig` for the naming convention.
     const zigacp = b.addModule("zigacp", .{
         .root_source_file = b.path("src/module.zig"),
         .target = target,
@@ -162,6 +76,7 @@ pub fn build(b: *std.Build) void {
     zigacp.addImport("acp-schema", schema);
     zigacp.addImport("acp-async", acp_async);
     zigacp.addImport("acp-mcp", acp_mcp);
+    zigacp.addImport("acp-conductor", acp_conductor);
     zigacp.addImport("zigstorage", zigstorage_module);
 
     const test_step = b.step("test", "Run unit tests");
@@ -261,7 +176,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(gen_schema_exe);
 
     const gen_schema_run = b.addRunArtifact(gen_schema_exe);
-    if (b.args) |args| gen_schema_run.addArgs(args);
+    gen_schema_run.addPassthruArgs();
     const gen_schema_step = b.step("gen-schema", "Emit canonical schema catalog JSON (path arg or stdout)");
     gen_schema_step.dependOn(&gen_schema_run.step);
 
@@ -285,7 +200,7 @@ pub fn build(b: *std.Build) void {
     yopo_step.dependOn(&yopo_run.step);
 
     const run_yopo = b.addRunArtifact(yopo_exe);
-    if (b.args) |args| run_yopo.addArgs(args);
+    run_yopo.addPassthruArgs();
     const run_step = b.step("run", "Run the reference agent (yopo)");
     run_step.dependOn(&run_yopo.step);
 
@@ -301,13 +216,19 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs", "Emit API documentation to zig-out/docs");
     docs_step.dependOn(&install_docs.step);
 
-    const vaxis_module = b.dependency("zigvaxis", .{ .target = target, .optimize = optimize }).module("zigvaxis");
+    // The trace viewer, `cli/`. Its toolkit is `zigtui`, which brings `zigvaxis`
+    // with it, re-exported through its own module, so this project never
+    // requests `zigvaxis` itself. Target and optimize only, the options every
+    // other consumer passes, or a harness linking both mints a second copy.
+    // Nothing in `src/` takes `zigtui`.
+    const zigtui_module = b.dependency("zigtui", .{ .target = target, .optimize = optimize }).module("zigtui");
+
     const trace_viewer_module = b.createModule(.{
-        .root_source_file = b.path("src/acp-trace-viewer/main.zig"),
+        .root_source_file = b.path("cli/main.zig"),
         .target = target,
         .optimize = optimize,
     });
-    trace_viewer_module.addImport("vaxis", vaxis_module);
+    trace_viewer_module.addImport("zigtui", zigtui_module);
     trace_viewer_module.addImport("zigstorage", zigstorage_module);
 
     const trace_viewer_exe = b.addExecutable(.{
@@ -318,32 +239,48 @@ pub fn build(b: *std.Build) void {
 
     const viewer_step = b.step("trace-viewer", "Build the interactive trace viewer");
     viewer_step.dependOn(&trace_viewer_exe.step);
+
+    // The CLI is its own module, rooted at its barrel for its tests.
+    const cli_tests_module = b.createModule(.{
+        .root_source_file = b.path("cli/module.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    cli_tests_module.addImport("zigtui", zigtui_module);
+    cli_tests_module.addImport("zigstorage", zigstorage_module);
+
+    const cli_tests = b.addTest(.{
+        .name = "cli-tests",
+        .root_module = cli_tests_module,
+    });
+    test_step.dependOn(&b.addRunArtifact(cli_tests).step);
 }
 
+/// Protocol surface ACP has not stabilized, each off unless asked for.
+///
+/// Stabilized surface carries no flag: `session/close`, `session/resume`,
+/// `logout`, `usage_update`, `$/cancel_request`, `additionalDirectories`,
+/// message ids and boolean config options are always built. `elicitation`
+/// stays flagged because its stable shape (form and URL modes) differs from
+/// the draft modelled here; `session_model` gates `session/set_model`, which
+/// ACP dropped for a `model` config option. `auth_methods` and
+/// `llm_providers` gate nothing yet.
 const UnstableFlags = struct {
     unstable_elicitation: bool,
     unstable_nes: bool,
-    unstable_cancel_request: bool,
     unstable_auth_methods: bool,
-    unstable_logout: bool,
     unstable_session_fork: bool,
-    unstable_session_resume: bool,
-    unstable_session_close: bool,
     unstable_session_model: bool,
-    unstable_session_usage: bool,
-    unstable_session_additional_directories: bool,
     unstable_llm_providers: bool,
-    unstable_message_id: bool,
-    unstable_boolean_config: bool,
 };
 
 fn collectUnstableFlags(b: *std.Build) UnstableFlags {
     var flags: UnstableFlags = undefined;
-    inline for (@typeInfo(UnstableFlags).@"struct".fields) |field| {
-        @field(flags, field.name) = b.option(
+    inline for (@typeInfo(UnstableFlags).@"struct".field_names) |name| {
+        @field(flags, name) = b.option(
             bool,
-            field.name,
-            "Expose unstable protocol surface: " ++ field.name,
+            name,
+            "Expose unstable protocol surface: " ++ name,
         ) orelse false;
     }
     return flags;

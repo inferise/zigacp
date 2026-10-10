@@ -21,11 +21,14 @@ const NotificationContext = interceptor_mod.NotificationContext;
 const RequestOutcome = interceptor_mod.RequestOutcome;
 const NotificationOutcome = interceptor_mod.NotificationOutcome;
 const Direction = interceptor_mod.Direction;
+const ReplyInterceptor = interceptor_mod.ReplyInterceptor;
+const ReplyOutcome = interceptor_mod.ReplyOutcome;
 
 pub const Chain = struct {
     allocator: std.mem.Allocator,
     request_links: std.ArrayList(RequestInterceptor) = .empty,
     notification_links: std.ArrayList(NotificationInterceptor) = .empty,
+    reply_links: std.ArrayList(ReplyInterceptor) = .empty,
 
     pub fn init(allocator: std.mem.Allocator) Chain {
         return .{ .allocator = allocator };
@@ -34,10 +37,15 @@ pub const Chain = struct {
     pub fn deinit(self: *Chain) void {
         self.request_links.deinit(self.allocator);
         self.notification_links.deinit(self.allocator);
+        self.reply_links.deinit(self.allocator);
     }
 
     pub fn appendRequest(self: *Chain, link: RequestInterceptor) !void {
         try self.request_links.append(self.allocator, link);
+    }
+
+    pub fn appendReply(self: *Chain, link: ReplyInterceptor) !void {
+        try self.reply_links.append(self.allocator, link);
     }
 
     pub fn appendNotification(self: *Chain, link: NotificationInterceptor) !void {
@@ -58,6 +66,23 @@ pub const Chain = struct {
             switch (outcome) {
                 .pass => |p| current = p,
                 .short_circuit, .fail => return outcome,
+            }
+        }
+        return .{ .pass = current };
+    }
+
+    /// Walk the reply links with a reply and the method of the request it answers.
+    pub fn dispatchReply(self: *Chain, direction: Direction, method: []const u8, result: std.json.Value, allocator: std.mem.Allocator) AcpError!ReplyOutcome {
+        var current = result;
+        for (self.reply_links.items) |link| {
+            const outcome = try link.onReply(.{
+                .direction = direction,
+                .method = method,
+                .result = current,
+                .allocator = allocator,
+            });
+            switch (outcome) {
+                .pass => |r| current = r,
             }
         }
         return .{ .pass = current };
@@ -191,4 +216,28 @@ test "Chain notification filter drops matching method" {
 
     const passed = try chain.dispatchNotification(.reverse, "session/cancel", .null, a);
     try std.testing.expect(passed == .pass);
+}
+
+test "a reply link sees the method its reply answers and may rewrite the result" {
+    const Stamp = struct {
+        seen: []const u8 = "",
+        fn onReply(ctx: *anyopaque, call: interceptor_mod.ReplyContext) AcpError!ReplyOutcome {
+            const self: *@This() = @ptrCast(@alignCast(ctx));
+            self.seen = call.method;
+            var copy = call.result.object;
+            copy.put(call.allocator, "stamped", .{ .bool = true }) catch return error.OutOfMemory;
+            return .{ .pass = .{ .object = copy } };
+        }
+    };
+    var stamp = Stamp{};
+    var c = Chain.init(std.testing.allocator);
+    defer c.deinit();
+    try c.appendReply(.{ .ptr = &stamp, .vtable = &.{ .on_reply = Stamp.onReply } });
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const result = try std.json.parseFromSliceLeaky(std.json.Value, arena.allocator(), "{\"sessionId\":\"s\"}", .{});
+    const out = try c.dispatchReply(.reverse, "session/new", result, arena.allocator());
+    try std.testing.expectEqualStrings("session/new", stamp.seen);
+    try std.testing.expect(out.pass.object.get("stamped").?.bool);
 }

@@ -289,7 +289,7 @@ test "ToolCallUpdate stringifies skipping null fields" {
     };
     const out = try std.json.Stringify.valueAlloc(std.testing.allocator, u, .{ .emit_null_optional_fields = false });
     defer std.testing.allocator.free(out);
-    try std.testing.expect(std.mem.indexOf(u8, out, "\"status\":\"completed\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "title") == null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "kind") == null);
+    try std.testing.expect(std.mem.find(u8, out, "\"status\":\"completed\"") != null);
+    try std.testing.expect(std.mem.find(u8, out, "title") == null);
+    try std.testing.expect(std.mem.find(u8, out, "kind") == null);
 }

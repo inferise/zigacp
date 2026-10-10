@@ -134,11 +134,11 @@ pub const ContentBlock = union(enum) {
         try jw.objectField("type");
         try jw.write(tag);
         const T = @TypeOf(payload);
-        inline for (@typeInfo(T).@"struct".fields) |f| {
-            const v = @field(payload, f.name);
-            const skip = @typeInfo(f.type) == .optional and v == null;
+        inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |name, F| {
+            const v = @field(payload, name);
+            const skip = @typeInfo(F) == .optional and v == null;
             if (!skip) {
-                try jw.objectField(f.name);
+                try jw.objectField(name);
                 try jw.write(v);
             }
         }
@@ -236,6 +236,6 @@ test "ContentBlock stringifies text with type tag" {
     const cb: ContentBlock = .{ .text = .{ .text = "hi" } };
     const out = try std.json.Stringify.valueAlloc(std.testing.allocator, cb, .{});
     defer std.testing.allocator.free(out);
-    try std.testing.expect(std.mem.indexOf(u8, out, "\"type\":\"text\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "\"text\":\"hi\"") != null);
+    try std.testing.expect(std.mem.find(u8, out, "\"type\":\"text\"") != null);
+    try std.testing.expect(std.mem.find(u8, out, "\"text\":\"hi\"") != null);
 }

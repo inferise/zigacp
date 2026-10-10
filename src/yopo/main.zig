@@ -60,7 +60,7 @@ const Agent = struct {
         pub const Params = schema.agent.NewSessionRequest;
         pub const Result = schema.agent.NewSessionResponse;
         pub fn handle(self: *@This(), arena: std.mem.Allocator, params: Params) acp.AcpError!Result {
-            const id_str = std.fmt.allocPrint(arena, "sess_{d}", .{self.agent.next_session}) catch return error.OutOfMemory;
+            const id_str = arena.print("sess_{d}", .{self.agent.next_session}) catch return error.OutOfMemory;
             self.agent.next_session += 1;
             const sess = try self.agent.sessions.create(.{ .value = id_str }, params.cwd);
             try sess.markInitialized();

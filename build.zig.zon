@@ -1,23 +1,28 @@
 .{
     .name = .zigacp,
     .description = "Zig ACP Module",
-    .version = "1.1.1",
+    .version = "2.0.0",
     .fingerprint = 0x7e68bdcdb9528453,
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .zigstorage = .{
             .path = "../zigstorage",
             .clone = "git@github.com:inferise/zigstorage.git",
         },
-        .zigvaxis = .{
-            .path = "../zigvaxis",
-            .clone = "git@github.com:inferise/zigvaxis.git",
+        .zigtui = .{
+            .path = "../zigtui",
+            .clone = "git@github.com:inferise/zigtui.git",
+        },
+        .zigbuildx = .{
+            .url = "git+https://github.com/mlavergn/zigbuildx#main",
+            .hash = "zigbuildx-3.2.0-9koPhAfUAwC2g9G5m6ArB2K3m9fp_2nVc4VSmXFbgrJQ",
         },
     },
     .paths = .{
         "build.zig",
         "build.zig.zon",
         "src",
+        "cli",
         "tools",
         "LICENSE",
         "README.md",

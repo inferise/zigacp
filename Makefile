@@ -79,14 +79,14 @@ test:
 
 # Format the Zig sources. Matches what CI checks with `zig fmt --check`.
 format:
-	zig fmt build*.zig src/ tools/
+	zig fmt build*.zig src/ cli/ tools/
 
 # Lint the Zig sources this repo owns. Both tools walk the working directory
 # by default, which drags in the vendored dependency cache under zig-pkg/ and
 # buries our findings in third-party noise — so feed them an explicit list.
 lint:
-	find build*.zig src tools -name '*.zig' | xargs zlintpre
-	find build*.zig src tools -name '*.zig' | zlint -c styleguide -S
+	find build*.zig src cli tools -name '*.zig' | xargs zlintpre
+	find build*.zig src cli tools -name '*.zig' | zlint -c styleguide -S
 
 # ---------------------------------------------
 # Documentation

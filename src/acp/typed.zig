@@ -84,6 +84,45 @@ pub const Dispatcher = struct {
         });
     }
 
+    /// Register a request handler as a context and a function, with no handler type.
+    ///
+    /// `f` is `fn (@TypeOf(context), std.mem.Allocator, Params) AcpError!Result`;
+    /// `Params` and `Result` are read from its signature. `context` is a pointer
+    /// the dispatcher keeps, and the params are decoded leniently.
+    pub fn registerRequestFn(self: *Dispatcher, method: []const u8, context: anytype, comptime f: anytype) !void {
+        const Params = ParamsOf(@TypeOf(context), f);
+        const Thunk = struct {
+            fn invoke(ctx: *anyopaque, allocator: std.mem.Allocator, params: std.json.Value) AcpError!std.json.Value {
+                const parsed = std.json.parseFromValueLeaky(Params, allocator, params, .{ .ignore_unknown_fields = true }) catch return error.InvalidParams;
+                const result = try f(@as(@TypeOf(context), @ptrCast(@alignCast(ctx))), allocator, parsed);
+                return marshal(allocator, result);
+            }
+        };
+        try self.request_entries.append(self.allocator, .{
+            .method = method,
+            .ptr = @ptrCast(@constCast(context)),
+            .thunk = Thunk.invoke,
+        });
+    }
+
+    /// Register a notification handler as a context and a function, with no handler type.
+    ///
+    /// `f` is `fn (@TypeOf(context), std.mem.Allocator, Params) AcpError!void`.
+    pub fn registerNotificationFn(self: *Dispatcher, method: []const u8, context: anytype, comptime f: anytype) !void {
+        const Params = ParamsOf(@TypeOf(context), f);
+        const Thunk = struct {
+            fn invoke(ctx: *anyopaque, allocator: std.mem.Allocator, params: std.json.Value) AcpError!void {
+                const parsed = std.json.parseFromValueLeaky(Params, allocator, params, .{ .ignore_unknown_fields = true }) catch return error.InvalidParams;
+                try f(@as(@TypeOf(context), @ptrCast(@alignCast(ctx))), allocator, parsed);
+            }
+        };
+        try self.notification_entries.append(self.allocator, .{
+            .method = method,
+            .ptr = @ptrCast(@constCast(context)),
+            .thunk = Thunk.invoke,
+        });
+    }
+
     /// View of this dispatcher as a `RequestHandler` for `Connection.setRequestHandler`.
     pub fn requestHandler(self: *Dispatcher) RequestHandler {
         return .{ .ptr = self, .vtable = &request_vtable };
@@ -116,6 +155,14 @@ pub const Dispatcher = struct {
     }
 };
 
+/// The params type of a handler function taking `(Context, std.mem.Allocator, Params)`.
+fn ParamsOf(comptime Context: type, comptime f: anytype) type {
+    if (@typeInfo(Context) != .pointer) @compileError("a handler's context must be a pointer");
+    const info = @typeInfo(@TypeOf(f)).@"fn";
+    if (info.param_types.len != 3) @compileError("a handler takes (context, allocator, params)");
+    return info.param_types[2].?;
+}
+
 const request_vtable: RequestHandler.VTable = .{ .handle = Dispatcher.handleRequest };
 const notification_vtable: NotificationHandler.VTable = .{ .handle = Dispatcher.handleNotification };
 
@@ -124,7 +171,8 @@ const notification_vtable: NotificationHandler.VTable = .{ .handle = Dispatcher.
 pub fn marshal(allocator: std.mem.Allocator, value: anytype) AcpError!std.json.Value {
     var buf: std.Io.Writer.Allocating = .init(allocator);
     defer buf.deinit();
-    std.json.Stringify.value(value, .{}, &buf.writer) catch return error.OutOfMemory;
+    // Unset optionals are left out, as `Connection` leaves them out of params.
+    std.json.Stringify.value(value, .{ .emit_null_optional_fields = false }, &buf.writer) catch return error.OutOfMemory;
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, allocator, buf.written(), .{}) catch
         return error.InvalidMessage;
     return parsed;
@@ -220,4 +268,31 @@ test "Dispatcher silently drops unregistered notifications" {
     defer d.deinit();
     const handler = d.notificationHandler();
     try handler.handle(std.testing.allocator, "no/such", .null);
+}
+
+test "a context and a function register without a handler type" {
+    const Agent = struct {
+        const Self = @This();
+        calls: usize = 0,
+        fn double(self: *Self, _: std.mem.Allocator, params: struct { n: i64 }) AcpError!struct { n: i64 } {
+            self.calls += 1;
+            return .{ .n = params.n * 2 };
+        }
+        fn ping(self: *Self, _: std.mem.Allocator, _: struct {}) AcpError!void {
+            self.calls += 1;
+        }
+    };
+    var agent = Agent{};
+    var dispatcher = Dispatcher.init(std.testing.allocator);
+    defer dispatcher.deinit();
+    try dispatcher.registerRequestFn("double", &agent, Agent.double);
+    try dispatcher.registerNotificationFn("ping", &agent, Agent.ping);
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const params = try std.json.parseFromSliceLeaky(std.json.Value, arena.allocator(), "{\"n\":21}", .{});
+    const answer = try dispatcher.requestHandler().handle(arena.allocator(), "double", params);
+    try std.testing.expectEqual(@as(i64, 42), answer.object.get("n").?.integer);
+    try dispatcher.notificationHandler().handle(arena.allocator(), "ping", .{ .object = .empty });
+    try std.testing.expectEqual(@as(usize, 2), agent.calls);
 }

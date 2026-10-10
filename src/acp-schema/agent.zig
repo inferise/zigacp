@@ -14,14 +14,35 @@ const mod = @import("module.zig");
 
 pub const method_initialize: []const u8 = "initialize";
 
+/// Who is on the other end: `clientInfo` in `initialize`, `agentInfo` in its reply.
+pub const Implementation = struct {
+    /// Programmatic name.
+    name: []const u8,
+    /// Name for display; `name` stands in when null.
+    title: ?[]const u8 = null,
+    version: []const u8,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
+};
+
+/// A capability with nothing to configure: present means served.
+pub const Capability = struct {
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
+};
+
 /// Capabilities the client offers to the agent.
 pub const ClientCapabilities = struct {
     fs: ?FsCapabilities = null,
     terminal: ?bool = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 
     pub const FsCapabilities = struct {
         readTextFile: ?bool = null,
         writeTextFile: ?bool = null,
+        /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+        _meta: ?mod.RawValue = null,
     };
 };
 
@@ -29,11 +50,38 @@ pub const ClientCapabilities = struct {
 pub const AgentCapabilities = struct {
     promptCapabilities: ?PromptCapabilities = null,
     loadSession: ?bool = null,
+    /// The MCP transports beyond stdio that `mcpServers` may name.
+    mcpCapabilities: ?McpCapabilities = null,
+    /// The `session/*` methods served beyond `new`, `prompt` and `cancel`.
+    sessionCapabilities: ?SessionCapabilities = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 
     pub const PromptCapabilities = struct {
         image: ?bool = null,
         audio: ?bool = null,
         embeddedContext: ?bool = null,
+        /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+        _meta: ?mod.RawValue = null,
+    };
+
+    pub const McpCapabilities = struct {
+        http: ?bool = null,
+        sse: ?bool = null,
+        /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+        _meta: ?mod.RawValue = null,
+    };
+
+    /// Each present member means its method is served.
+    pub const SessionCapabilities = struct {
+        list: ?Capability = null,
+        delete: ?Capability = null,
+        /// `additionalDirectories` is honoured on `session/new`, `session/load` and `session/resume`.
+        additionalDirectories: ?Capability = null,
+        @"resume": ?Capability = null,
+        close: ?Capability = null,
+        /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+        _meta: ?mod.RawValue = null,
     };
 };
 
@@ -42,12 +90,18 @@ pub const AgentCapabilities = struct {
 pub const InitializeRequest = struct {
     protocolVersion: mod.ProtocolVersion,
     clientCapabilities: ?ClientCapabilities = null,
+    clientInfo: ?Implementation = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
 pub const InitializeResponse = struct {
     protocolVersion: mod.ProtocolVersion,
     agentCapabilities: ?AgentCapabilities = null,
     authMethods: ?[]const AuthMethod = null,
+    agentInfo: ?Implementation = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
 /// One auth method the agent offers; the client picks one and follows up
@@ -56,6 +110,8 @@ pub const AuthMethod = struct {
     id: []const u8,
     name: []const u8,
     description: ?[]const u8 = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
 // ---------------------------------------------------------------------------
@@ -66,9 +122,27 @@ pub const method_authenticate: []const u8 = "authenticate";
 
 pub const AuthenticateRequest = struct {
     methodId: []const u8,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
-pub const AuthenticateResponse = struct {};
+pub const AuthenticateResponse = struct {
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
+};
+
+pub const method_logout: []const u8 = "logout";
+
+/// Ends the client's sign-in with the agent; served when `agentCapabilities.auth.logout` is offered.
+pub const LogoutRequest = struct {
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
+};
+
+pub const LogoutResponse = struct {
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
+};
 
 // ---------------------------------------------------------------------------
 // session/*
@@ -102,7 +176,11 @@ pub const method_session_new: []const u8 = "session/new";
 
 pub const NewSessionRequest = struct {
     cwd: []const u8,
+    /// More roots beside `cwd`; sent only to an agent offering `sessionCapabilities.additionalDirectories`.
+    additionalDirectories: ?[]const []const u8 = null,
     mcpServers: ?[]const mod.McpServerConfig = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
 pub const NewSessionResponse = struct {
@@ -113,6 +191,8 @@ pub const NewSessionResponse = struct {
     modes: ?mod.SessionModeState = null,
     /// Settings the client may change mid-session, such as the model; null when there are none.
     config_options: ?[]const mod.SessionConfigOption = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 
     /// Writes the struct under its camelCase wire keys.
     ///
@@ -161,7 +241,11 @@ pub const method_session_load: []const u8 = "session/load";
 pub const LoadSessionRequest = struct {
     sessionId: SessionId,
     cwd: []const u8,
+    /// More roots beside `cwd`; sent only to an agent offering `sessionCapabilities.additionalDirectories`.
+    additionalDirectories: ?[]const []const u8 = null,
     mcpServers: ?[]const mod.McpServerConfig = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
 pub const LoadSessionResponse = struct {
@@ -169,6 +253,8 @@ pub const LoadSessionResponse = struct {
 
     modes: ?mod.SessionModeState = null,
     config_options: ?[]const mod.SessionConfigOption = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 
     /// Writes the struct under its camelCase wire keys.
     ///
@@ -217,10 +303,14 @@ pub const method_session_prompt: []const u8 = "session/prompt";
 pub const PromptRequest = struct {
     sessionId: SessionId,
     prompt: []const mod.ContentBlock,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
 pub const PromptResponse = struct {
     stopReason: StopReason,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
 /// Why the agent stopped producing tokens for this prompt.
@@ -255,6 +345,8 @@ pub const method_session_cancel: []const u8 = "session/cancel";
 
 pub const CancelNotification = struct {
     sessionId: SessionId,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
 pub const method_session_set_mode: []const u8 = "session/set_mode";
@@ -262,22 +354,88 @@ pub const method_session_set_mode: []const u8 = "session/set_mode";
 pub const SetModeRequest = struct {
     sessionId: SessionId,
     modeId: []const u8,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
-pub const SetModeResponse = struct {};
+pub const SetModeResponse = struct {
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
+};
 
 pub const method_session_list: []const u8 = "session/list";
 
-pub const ListSessionsRequest = struct {};
+pub const ListSessionsRequest = struct {
+    /// Only sessions under this directory; every session when null.
+    cwd: ?[]const u8 = null,
+    /// Where the previous page ended: its `nextCursor`.
+    cursor: ?[]const u8 = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
+};
 
 pub const SessionInfo = struct {
     sessionId: SessionId,
     cwd: []const u8,
+    additionalDirectories: ?[]const []const u8 = null,
+    title: ?[]const u8 = null,
+    /// ISO 8601.
+    updatedAt: ?[]const u8 = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
 pub const ListSessionsResponse = struct {
     sessions: []const SessionInfo,
+    /// Present when more sessions follow; pass it back as `cursor`.
+    nextCursor: ?[]const u8 = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
+
+pub const method_session_close: []const u8 = "session/close";
+
+/// Ends a session, cancelling any turn it is running; served when `sessionCapabilities.close` is offered.
+pub const CloseSessionRequest = struct {
+    sessionId: SessionId,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
+};
+
+pub const CloseSessionResponse = struct {
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
+};
+
+pub const method_session_delete: []const u8 = "session/delete";
+
+/// Forgets a stored session; served when `sessionCapabilities.delete` is offered.
+pub const DeleteSessionRequest = struct {
+    sessionId: SessionId,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
+};
+
+pub const DeleteSessionResponse = struct {
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
+};
+
+pub const method_session_resume: []const u8 = "session/resume";
+
+/// Reopens a session without replaying its history; served when `sessionCapabilities.resume` is offered.
+pub const ResumeSessionRequest = struct {
+    sessionId: SessionId,
+    cwd: []const u8,
+    /// More roots beside `cwd`; sent only to an agent offering `sessionCapabilities.additionalDirectories`.
+    additionalDirectories: ?[]const []const u8 = null,
+    mcpServers: ?[]const mod.McpServerConfig = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
+};
+
+/// A resumed session's modes and settings: the shape `session/load` answers with.
+pub const ResumeSessionResponse = LoadSessionResponse;
 
 pub const method_session_set_config_option: []const u8 = "session/set_config_option";
 
@@ -287,6 +445,8 @@ pub const SetConfigOptionRequest = struct {
     session_id: SessionId,
     config_id: []const u8,
     value: mod.RawValue,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 
     /// Writes the struct under its camelCase wire keys.
     ///
@@ -336,6 +496,8 @@ pub const SetConfigOptionResponse = struct {
     const Self = @This();
 
     config_options: ?[]const mod.SessionConfigOption = null,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 
     /// Writes the struct under its camelCase wire keys.
     ///
@@ -389,6 +551,8 @@ pub const method_session_update: []const u8 = "session/update";
 pub const SessionNotification = struct {
     sessionId: SessionId,
     update: mod.SessionUpdate,
+    /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+    _meta: ?mod.RawValue = null,
 };
 
 fn freeToken(allocator: std.mem.Allocator, token: std.json.Token) void {
@@ -538,4 +702,73 @@ test "SetModeRequest" {
     const parsed = try std.json.parseFromSlice(SetModeRequest, std.testing.allocator, src, .{});
     defer parsed.deinit();
     try std.testing.expectEqualStrings("reasoning", parsed.value.modeId);
+}
+
+// The replies each inferise harness writes (zigclaude, zigcodex, ziggrok,
+// ziggemini, zigcopilot, zigafm), decoded strictly: a key the schema does not
+// declare fails the parse, so these pin that the schema carries all of them.
+test "every harness's initialize, session/new, session/load and session/prompt replies decode strictly" {
+    const initialize = [_][]const u8{
+        \\{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"_meta":{"inferise":{"interject":true,"unpromptedTurns":true}}}}
+        ,
+        \\{"protocolVersion":1,"agentCapabilities":{"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"loadSession":true}}
+        ,
+        \\{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":false,"audio":false,"embeddedContext":false},"sessionCapabilities":{"close":{}}},"agentInfo":{"name":"ziggrok","version":"0.0.3"},"authMethods":[]}
+        ,
+        \\{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":false,"audio":false,"embeddedContext":false},"sessionCapabilities":{"close":{}}},"agentInfo":{"name":"zigafm","version":"1.0.0"},"authMethods":[],"_meta":{"zigafm":{"availability":"available"}}}
+    };
+    for (initialize) |src| {
+        const parsed = try std.json.parseFromSlice(InitializeResponse, std.testing.allocator, src, .{});
+        parsed.deinit();
+    }
+
+    const opened = [_][]const u8{
+        \\{"sessionId":"3f2b8c1e","modes":{"currentModeId":"default","availableModes":[{"id":"default","name":"Ask","description":"Ask before anything that is not a read"},{"id":"plan","name":"Plan"}]},"configOptions":[{"type":"select","id":"model","name":"Model","category":"model","currentValue":"default","options":[{"value":"default","name":"Default","description":"Whatever this account defaults to"},{"value":"opus","name":"Opus"}]}]}
+        ,
+        \\{"sessionId":"a1b2c3d4","_meta":{"ziggrok":{"account":"grok","alwaysApprove":false,"grokVersion":"0.1.42","contextTokens":256000,"contextUsed":11200}}}
+        ,
+        \\{"sessionId":"zg-9f3a1c0b7e2d4a56","_meta":{"ziggemini":{"account":"antigravity","alwaysApprove":false,"agyVersion":"1.4.2"}}}
+        ,
+        \\{"sessionId":"7c9e6679-7425-40de-944b-e07fc1f90ae7"}
+    };
+    for (opened) |src| {
+        const parsed = try std.json.parseFromSlice(NewSessionResponse, std.testing.allocator, src, .{});
+        parsed.deinit();
+    }
+
+    const loaded = [_][]const u8{
+        \\{"modes":{"currentModeId":"readOnly","availableModes":[{"id":"readOnly","name":"Read only"}]},"configOptions":[]}
+        ,
+        \\{"_meta":{"zigcopilot":{"account":"copilot","alwaysApprove":false,"copilotVersion":"0.0.330","contextTokens":128000,"contextUsed":11100}}}
+        ,
+        \\{"_meta":{"zigafm":{"turns":3,"instructions":"Answer briefly."}}}
+    };
+    for (loaded) |src| {
+        const parsed = try std.json.parseFromSlice(LoadSessionResponse, std.testing.allocator, src, .{});
+        parsed.deinit();
+    }
+
+    const prompted = [_][]const u8{
+        \\{"stopReason":"end_turn","_meta":{"zigclaude":{"wallMs":8421,"claudeMs":7930,"inputTokens":15234,"outputTokens":612,"costUsd":0.0412,"contextTokens":48211,"contextWindow":200000,"rateLimits":{"fiveHour":{"utilization":0.23,"resetsAt":1791320400}}}}}
+        ,
+        \\{"stopReason":"end_turn","_meta":{"zigcodex":{"wallMs":12040,"codexMs":11800,"inputTokens":24310,"cachedInputTokens":18000,"outputTokens":845,"reasoningOutputTokens":320,"contextTokens":25155,"contextWindow":272000}}}
+        ,
+        \\{"stopReason":"end_turn","_meta":{"ziggemini":{"wallMs":7400,"agyMs":7100,"deniedActions":["write_file /p/a.txt"],"conversationId":"conv-1"}}}
+        ,
+        \\{"stopReason":"refusal","_meta":{"zigafm":{"wallMs":310,"tokens":null,"status":"contextOverflow","error":"The conversation no longer fits the context window."}}}
+    };
+    for (prompted) |src| {
+        const parsed = try std.json.parseFromSlice(PromptResponse, std.testing.allocator, src, .{});
+        parsed.deinit();
+    }
+
+    const listed = [_][]const u8{
+        \\{"sessions":[{"sessionId":"01a09dd4","cwd":"."}]}
+        ,
+        \\{"sessions":[{"sessionId":"7c9e6679","cwd":"/p","title":"Summarize this file","updatedAt":"2026-10-06T14:03:22Z"}]}
+    };
+    for (listed) |src| {
+        const parsed = try std.json.parseFromSlice(ListSessionsResponse, std.testing.allocator, src, .{});
+        parsed.deinit();
+    }
 }
