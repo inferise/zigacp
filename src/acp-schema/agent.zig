@@ -35,8 +35,28 @@ pub const Capability = struct {
 pub const ClientCapabilities = struct {
     fs: ?FsCapabilities = null,
     terminal: ?bool = null,
+    /// The elicitation modes the client renders (`elicitation/create`).
+    elicitation: ?mod.elicitation.ElicitationCapabilities = null,
+    /// What the client shows of a session beyond the conversation.
+    session: ?SessionCapabilities = null,
     /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
     _meta: ?mod.RawValue = null,
+
+    /// `clientCapabilities.session`: a member present is a capability offered.
+    pub const SessionCapabilities = struct {
+        /// The client shows `notice` updates.
+        notices: ?Marker = null,
+        /// The client takes `compaction` updates.
+        compaction: ?Marker = null,
+        /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+        _meta: ?mod.RawValue = null,
+    };
+
+    /// A capability that is offered by being present: `{}`.
+    pub const Marker = struct {
+        /// Extension data, namespaced by whoever adds it (`_meta.<name>`).
+        _meta: ?mod.RawValue = null,
+    };
 
     pub const FsCapabilities = struct {
         readTextFile: ?bool = null,

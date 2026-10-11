@@ -1,13 +1,22 @@
 .{
     .name = .zigacp,
     .description = "Zig ACP Client-Agent Module",
-    .version = "2.1.0",
+    .version = "3.0.0",
     .fingerprint = 0x7e68bdcdb9528453,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .zigstorage = .{
             .path = "../zigstorage",
             .clone = "git@github.com:inferise/zigstorage.git",
+        },
+        // The terminal toolkit, for the `acp-tui` module only; the protocol
+        // module never imports it. Lazy: fetched with the package, compiled
+        // only by a consumer that asks for `acp-tui`. zigtui must never take
+        // zigacp back.
+        .zigtui = .{
+            .path = "../zigtui",
+            .clone = "git@github.com:inferise/zigtui.git",
+            .lazy = true,
         },
         .zigbuildx = .{
             .url = "git+https://github.com/mlavergn/zigbuildx#main",

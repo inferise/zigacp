@@ -178,6 +178,8 @@ pub const ToolCallContent = union(enum) {
 pub const ToolCall = struct {
     toolCallId: ToolCallId,
     title: []const u8,
+    /// The tool's programmatic name, as the agent knows it (`Bash`, `search`); null when there is none to give.
+    name: ?[]const u8 = null,
     kind: ?ToolKind = null,
     status: ?ToolCallStatus = null,
     content: ?[]const ToolCallContent = null,
@@ -193,6 +195,8 @@ pub const ToolCall = struct {
 pub const ToolCallUpdate = struct {
     toolCallId: ToolCallId,
     title: ?[]const u8 = null,
+    /// The tool's programmatic name, when it changed or was not known before.
+    name: ?[]const u8 = null,
     kind: ?ToolKind = null,
     status: ?ToolCallStatus = null,
     content: ?[]const ToolCallContent = null,

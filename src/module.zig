@@ -93,6 +93,86 @@ pub const Conductor = struct {
 
 /// A read-only view over one MCP server from `session/new` or `session/load`.
 pub const McpServer = acp_mcp.McpServer;
+/// A host's own MCP server, offered to a session and trusted in `_meta.inferise`.
+pub const McpOffer = @import("mcp_offer.zig").McpOffer;
+/// A host's own MCP server over Streamable HTTP on loopback, answering a tool table the host passes in.
+pub const McpHttpServer = acp_mcp.McpHttpServer;
+/// Whoever answers an `McpHttpServer`'s tools.
+pub const McpToolHost = acp_mcp.McpToolHost;
+/// What a tool call came back with.
+pub const McpToolOutcome = acp_mcp.McpToolOutcome;
+/// One tool as `tools/list` returns it.
+pub const McpToolDefinition = acp_mcp.ToolDefinition;
+/// What an `McpHttpServer` says about itself in `initialize`.
+pub const McpServerInfo = acp_mcp.ServerInfo;
+/// The tools a relay offers its agent: `report_progress` and `ask_user`.
+pub const McpRelayTools = acp_mcp.RelayTools;
+
+// -----------------------------------------------------------------------------
+// Analytics: every frame between a client and an agent, tapped, decoded and recorded
+
+/// What watches an agent's frames, and what is done with them.
+///
+/// A `TapTransport` wraps any `Transport` and reports each frame that crosses it
+/// to an `Observer`. An observer never blocks, steers or fails the protocol: it
+/// copies the frame, and a full queue drops and counts.
+pub const Analytics = struct {
+    /// The sink a tap reports each frame to.
+    pub const Observer = @import("analytics_observer.zig").AnalyticsObserver;
+    /// One frame as an observer sees it.
+    pub const Frame = @import("analytics_observer.zig").ObservedFrame;
+    /// Which way a frame went, seen from the client's side.
+    pub const Direction = @import("analytics_observer.zig").ObservedDirection;
+    /// An observer that counts the frames it is shown in each direction.
+    pub const FrameCounter = @import("analytics_observer.zig").ObservedFrameCounter;
+    /// A transport wrapper that reports every frame crossing it to an `Observer`.
+    pub const TapTransport = @import("analytics_tap_transport.zig").AnalyticsTapTransport;
+    /// Masks secret-shaped content before it is recorded.
+    pub const ContentRedactor = @import("analytics_redactor.zig").AnalyticsRedactor;
+    /// Where analytics records go.
+    pub const Sink = @import("analytics_sink.zig").AnalyticsSink;
+    /// The agent a record belongs to, as a sink sees it.
+    pub const Subagent = @import("analytics_sink.zig").AnalyticsSubagent;
+    /// A sink that keeps records in memory, for tests and live figures.
+    pub const MemorySink = @import("analytics_memory_sink.zig").AnalyticsMemorySink;
+    /// A sink that writes one JSONL file per subagent plus `run.json`.
+    pub const JsonlSink = @import("analytics_jsonl_sink.zig").AnalyticsJsonlSink;
+    /// Who an agent is, as analytics name it: its id in the run, its label and its version.
+    pub const AgentIdentity = @import("analytics_sink.zig").AgentIdentity;
+    /// Reads events off one agent's frames: sessions, turns, tools, permissions and each session's state.
+    pub const EventDecoder = @import("analytics_event_decoder.zig").AnalyticsEventDecoder;
+    /// One thing the frames showed.
+    pub const Event = @import("analytics_event_decoder.zig").AnalyticsEvent;
+    /// What a session is doing, from the protocol alone: idle, busy, waiting on the person, or exited.
+    pub const AgentState = @import("analytics_event_decoder.zig").AgentState;
+    /// Collects every agent's frames on its own task and writes them to sinks as events.
+    pub const Recorder = @import("analytics_recorder.zig").AnalyticsRecorder;
+    /// How a recorder behaves for one run: content capture, its limit, the queue's size.
+    pub const Options = @import("analytics_recorder.zig").RecorderOptions;
+    /// A registered agent: its id and the observer to put on its transport.
+    pub const Watch = @import("analytics_recorder.zig").RecorderWatch;
+};
+
+// -----------------------------------------------------------------------------
+// Relaying: what sits between a host and an agent and adds to the conversation
+
+/// What a relay between a host and an agent is built from, beyond `Conductor`'s pieces.
+pub const Relay = struct {
+    /// One session's record: every frame, both directions, with its turn, as JSONL.
+    pub const SessionLog = @import("relay_session_log.zig").RelaySessionLog;
+    /// Which side of the relay a recorded frame came from.
+    pub const SessionLogOrigin = @import("relay_session_log.zig").Origin;
+    /// One usage shape from `_meta.inferise.usage`, or from `usage_update` when an agent sent none.
+    pub const UsageNormalizer = @import("relay_usage_normalizer.zig").RelayUsageNormalizer;
+    /// What the session's last `usage_update` said.
+    pub const UsageFallback = @import("relay_usage_normalizer.zig").UsageFallback;
+    /// Relays frames between a host and an agent: the record, turns, one usage shape, instructions and the MCP way back.
+    pub const Proxy = @import("relay_proxy.zig").RelayProxy;
+    /// The agent end of a relay: an agent linked in-process, or a child ACP agent on stdio.
+    pub const Downstream = @import("relay_downstream.zig").RelayDownstream;
+    /// A child ACP agent to spawn: its command line and environment.
+    pub const ChildCommand = @import("relay_downstream.zig").ChildCommand;
+};
 
 // -----------------------------------------------------------------------------
 // Shared schema (acp-schema)
@@ -233,9 +313,63 @@ pub const Client = struct {
     pub const ReleaseTerminalRequest = schema.client.ReleaseTerminalRequest;
     pub const ReleaseTerminalResponse = schema.client.ReleaseTerminalResponse;
 
+    /// `elicitation/create`: the agent asks the person, through the client, for a form or a page visited.
+    pub const method_elicitation_create = schema.elicitation.method_elicitation_create;
+    /// `elicitation/complete`: a URL elicitation is over.
+    pub const method_elicitation_complete = schema.elicitation.method_elicitation_complete;
+    pub const CreateElicitationRequest = schema.elicitation.CreateElicitationRequest;
+    pub const CreateElicitationResponse = schema.elicitation.CreateElicitationResponse;
+    pub const CompleteElicitationNotification = schema.elicitation.CompleteElicitationNotification;
+    pub const ElicitationAction = schema.elicitation.ElicitationAction;
+    pub const ElicitationCapabilities = schema.elicitation.ElicitationCapabilities;
+
     pub const TerminalEnv = schema.client.TerminalEnv;
     pub const TerminalExitStatus = schema.client.TerminalExitStatus;
 
+    /// A session's modes and config options as last reported, for a client to list and switch.
+    pub const Settings = @import("client_settings.zig").ClientSettings;
+    /// One mode or select value: its id and what a person reads.
+    pub const SettingsChoice = @import("client_settings.zig").SettingsChoice;
+    /// One config option as last reported: a select's choices, or a boolean's value.
+    pub const SettingsOption = @import("client_settings.zig").SettingsOption;
+    /// One agent's ACP session as a front end drives it: handshake, sessions, turns, permissions, the record.
+    pub const Session = @import("client_session.zig").ClientSession;
+    /// A question an agent is blocked on, waiting for the person.
+    pub const PendingPermission = @import("client_session.zig").PendingPermission;
+    /// One answer the person may give to a pending permission.
+    pub const PermissionChoice = @import("client_session.zig").PermissionChoice;
+    /// What the person chose.
+    pub const Answer = @import("client_session.zig").Answer;
+    /// One slash command the session offers.
+    pub const SessionCommand = @import("client_session.zig").SessionCommand;
+    /// One step of the agent's plan.
+    pub const PlanStep = @import("client_session.zig").PlanStep;
+    /// How much of its context window the session fills.
+    pub const ContextUse = @import("client_session.zig").ContextUse;
+    /// What the agent said beyond turns: commands, plan, context.
+    pub const SessionExtras = @import("client_session.zig").SessionExtras;
+    /// What the agent's `initialize` offered beyond the handshake.
+    pub const AgentOffer = @import("client_session.zig").AgentOffer;
+    /// An image attached to a prompt.
+    pub const PromptImage = @import("client_session.zig").PromptImage;
+    /// A page of the conversation record, read from an absolute position.
+    pub const RecordPage = @import("client_session.zig").RecordPage;
+    /// A config option's new value: a select's choice or a boolean.
+    pub const OptionValue = @import("client_session.zig").OptionValue;
+    /// One `_inferise/sign_in` exchange on a task of its own, polled by `sign_in_finish`, for a front end to show.
+    pub const SignIn = @import("client_sign_in.zig").ClientSignIn;
+    /// How a sign-in reaches its agent: a client that has shaken hands and opened no session.
+    pub const SignInAgent = @import("client_sign_in.zig").SignInAgent;
+    /// Where a sign-in stands.
+    pub const SignInPhase = @import("client_sign_in.zig").SignInPhase;
+    /// What a front end shows of a sign-in.
+    pub const SignInView = @import("client_sign_in.zig").SignInView;
+    /// An agent served on one end of an in-process pair, a `Session` on the other, opened and torn down in order.
+    pub const Seam = @import("client_seam.zig").ClientSeam;
+    /// How a seam's session is opened: account, observer, a session to reopen, the MCP offer.
+    pub const SeamOptions = @import("client_seam.zig").SeamOptions;
+    /// Where a client keeps a session's finished turns: the caller's store, behind a vtable.
+    pub const History = @import("client_history.zig").ClientHistory;
     /// Serves `fs/read_text_file` and `fs/write_text_file` on a client's dispatcher.
     pub const Fs = @import("client_fs.zig").ClientFs;
     /// Serves the five `terminal/*` methods on a client's dispatcher, over plain pipes.
@@ -334,6 +468,8 @@ pub const Meta = struct {
 pub const Inferise = struct {
     /// The `_meta` member every inferise field sits under.
     pub const key = "inferise";
+    /// The name of a host's own MCP server (`McpOffer`), which every agent is told to trust.
+    pub const mcp_server = "inferise";
 
     /// Host → agent notification: adds a message to the turn running now (`InterjectNotification`).
     pub const method_interject = "_inferise/interject";
@@ -341,10 +477,6 @@ pub const Inferise = struct {
     pub const method_run_ended = "_inferise/run_ended";
     /// Agent → host notification: what runs in the background (`BackgroundTasksNotification`).
     pub const method_background_tasks = "_inferise/background_tasks";
-    /// Relay → host notification: a session's own report of its progress (`ProgressNotification`).
-    pub const method_progress = "_inferise/progress";
-    /// Relay → host request: a question for the person (`AskUserRequest`, answered by `AskUserResponse`).
-    pub const method_ask_user = "_inferise/ask_user";
 
     /// `_meta.inferise.instructions` on `session/new`: the host's standing instructions.
     pub const instructions = "instructions";
@@ -360,8 +492,10 @@ pub const Inferise = struct {
     pub const failure = "failure";
     /// `_meta.inferise.trustedMcpServers` on `session/new` and `session/load`: MCP servers, by name, whose tools need no permission.
     pub const trusted_mcp_servers = "trustedMcpServers";
-    /// `_meta.inferise.tool` on a `tool_call`: which tool ran, by the agent's own name for it (`Tool`).
+    /// `_meta.inferise.tool` on a `tool_call`: what ACP's `name` does not say — the tool's MCP server and the agent that ran it (`Tool`).
     pub const tool = "tool";
+    /// `_meta.inferise.subagent` on every update a multiplexing proxy forwards: which of its agents sent it, by name.
+    pub const subagent = "subagent";
 
     /// Client → agent request: what the agent can say about itself beyond `agentInfo` (`StatusRequest`, answered by `StatusResponse`).
     pub const method_status = "_inferise/status";
@@ -570,13 +704,15 @@ pub const Inferise = struct {
         fields: []const StatusField = &.{},
     };
 
-    /// `_meta.inferise.tool` on a `tool_call`: the tool behind it, named as the agent names it.
+    /// `_meta.inferise.tool` on a `tool_call`: what ACP's own `name` field does not say.
     ///
-    /// ACP's `title` and `kind` say what a call does for a person to read; this
-    /// says which tool it was, for a client that counts or filters by tool.
+    /// ACP's `name` (stable since schema 1.22) names the tool; this adds the MCP
+    /// server it belongs to and the agent that ran it, for a client that counts or
+    /// filters by tool. `name` here is what agents sent before ACP had the field:
+    /// readers take ACP's `name` first, and writers leave this one out.
     pub const Tool = struct {
-        /// The agent's own name for the tool (`Bash`, `commandExecution`, `run_shell_command`).
-        name: []const u8,
+        /// The agent's own name for the tool, from an agent that predates ACP's `name`.
+        name: ?[]const u8 = null,
         /// The MCP server the tool belongs to, for an MCP tool.
         server: ?[]const u8 = null,
         /// The agent that ran it, by its short name (`claude`, `codex`, `grok`, `gemini`, `copilot`).
@@ -594,6 +730,19 @@ pub const Inferise = struct {
         const Ours = struct { tool: ?Tool = null };
         const ours = try Meta.read(Ours, allocator, meta, key) orelse return null;
         return ours.tool;
+    }
+
+    /// Reads `_meta.inferise.subagent` off an update a multiplexing proxy forwarded.
+    ///
+    /// Parameters:
+    /// - `allocator`: owns what is parsed; an arena in practice.
+    /// - `meta`: the update's `_meta`, or null.
+    ///
+    /// Return: the subagent's name, or null when none was named; `error.InvalidParams` when it is not a string.
+    pub fn readSubagent(allocator: std.mem.Allocator, meta: ?RawValue) AcpError!?[]const u8 {
+        const Ours = struct { subagent: ?[]const u8 = null };
+        const ours = try Meta.read(Ours, allocator, meta, key) orelse return null;
+        return ours.subagent;
     }
 
     /// `_inferise/accounts`'s params: none.
@@ -855,6 +1004,47 @@ pub const Inferise = struct {
         /// The account's rate-limit windows.
         windows: []const UsageWindow = &.{},
 
+        /// Copies the usage, its windows and their text included, so it outlives the parse it came from.
+        ///
+        /// Parameters:
+        /// - `self`: the usage.
+        /// - `allocator`: owns the copy; an arena in practice, since nothing here frees it piecemeal.
+        ///
+        /// Return: the copy; propagates allocation failure.
+        pub fn clone(self: *const Self, allocator: std.mem.Allocator) std.mem.Allocator.Error!Self {
+            var copy = self.*;
+            const windows = try allocator.alloc(UsageWindow, self.windows.len);
+            for (self.windows, windows) |window, *slot| {
+                slot.* = window;
+                slot.id = try allocator.dupe(u8, window.id);
+                if (window.label) |text| slot.label = try allocator.dupe(u8, text);
+            }
+            copy.windows = windows;
+            return copy;
+        }
+
+        /// Reports the input tokens actually processed rather than served from cache.
+        ///
+        /// Parameters:
+        /// - `self`: the usage.
+        ///
+        /// Return: input tokens not served from cache, zero when cache met the total; null when input was not reported.
+        pub fn freshInputTokens(self: *const Self) ?u64 {
+            const input = self.input_tokens orelse return null;
+            const cached = self.cached_input_tokens orelse return input;
+            return if (cached >= input) 0 else input - cached;
+        }
+
+        /// Reports whether the agent measured the turn itself: its own time or the turn's tokens.
+        ///
+        /// Parameters:
+        /// - `self`: the usage.
+        ///
+        /// Return: false for an agent that reported only the wall clock, whose zeroes would claim a measurement nobody took.
+        pub fn measuresTurn(self: *const Self) bool {
+            return self.agent_ms != null or self.input_tokens != null;
+        }
+
         /// Writes the struct under its camelCase wire keys, leaving out what was not reported.
         ///
         /// Parameters:
@@ -1007,27 +1197,15 @@ pub const Inferise = struct {
         sessionId: Agent.SessionId,
         tasks: []const BackgroundTask,
     };
+};
 
-    pub const ProgressNotification = struct {
-        sessionId: Agent.SessionId,
-        summary: []const u8,
-        /// 0 to 100.
-        percentComplete: ?f64 = null,
-        /// 0 to 100.
-        confidence: ?f64 = null,
-    };
+// -----------------------------------------------------------------------------
+// Test agents
 
-    pub const AskUserRequest = struct {
-        sessionId: Agent.SessionId,
-        question: []const u8,
-        /// Suggested answers; the person may give another.
-        options: ?[]const []const u8 = null,
-    };
-
-    pub const AskUserResponse = struct {
-        /// Null when the person gave none.
-        answer: ?[]const u8 = null,
-    };
+/// Agents for a client's tests and demos, served in-process; they name no model.
+pub const Test = struct {
+    /// Echoes each prompt, asks permission for one that starts with `ask `, and advertises status, modes and a boolean option.
+    pub const EchoAgent = @import("test_echo_agent.zig").TestEchoAgent;
 };
 
 // -----------------------------------------------------------------------------
@@ -1042,6 +1220,9 @@ test {
     std.testing.refAllDecls(Inferise);
     std.testing.refAllDecls(Conductor);
     std.testing.refAllDecls(Pty);
+    std.testing.refAllDecls(Analytics);
+    std.testing.refAllDecls(Relay);
+    std.testing.refAllDecls(Test);
 }
 
 test "a namespace of _meta reads as a type, and absent reads as null" {
@@ -1172,6 +1353,28 @@ test "a turn's usage and failure ride in _meta.inferise, absent figures left out
     try std.testing.expectEqualStrings("run rm -rf", (try Inferise.readTurn(arena, declined)).denied[0]);
 }
 
+test "a turn's usage copies out of its parse, and its fresh input never underflows" {
+    var copy_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer copy_arena.deinit();
+
+    const copy = blk: {
+        var parse_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer parse_arena.deinit();
+        const parsed = try std.json.parseFromSliceLeaky(Inferise.TurnUsage, parse_arena.allocator(), "{\"inputTokens\":17523,\"cachedInputTokens\":12928,\"windows\":[{\"id\":\"primary\",\"label\":\"30-day\",\"usedPercent\":18}]}", .{});
+        break :blk try parsed.clone(copy_arena.allocator());
+    };
+    try std.testing.expectEqualStrings("primary", copy.windows[0].id);
+    try std.testing.expectEqualStrings("30-day", copy.windows[0].label.?);
+    try std.testing.expectEqual(@as(?u64, 4595), copy.freshInputTokens());
+    try std.testing.expect(copy.measuresTurn());
+
+    const cached_over: Inferise.TurnUsage = .{ .input_tokens = 100, .cached_input_tokens = 120 };
+    try std.testing.expectEqual(@as(?u64, 0), cached_over.freshInputTokens());
+    const wall_only: Inferise.TurnUsage = .{ .wall_ms = 820 };
+    try std.testing.expectEqual(@as(?u64, null), wall_only.freshInputTokens());
+    try std.testing.expect(!wall_only.measuresTurn());
+}
+
 test "a session's account, log directory and trusted servers read off _meta.inferise in one shape" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -1206,13 +1409,27 @@ test "a tool's identity rides in _meta.inferise.tool and reads back" {
     const bytes = try std.json.Stringify.valueAlloc(arena, meta, .{ .emit_null_optional_fields = false });
     try std.testing.expectEqualStrings("{\"inferise\":{\"tool\":{\"name\":\"search\",\"server\":\"docs\",\"agent\":\"claude\"}}}", bytes);
     const tool = (try Inferise.readTool(arena, meta)).?;
-    try std.testing.expectEqualStrings("search", tool.name);
+    try std.testing.expectEqualStrings("search", tool.name.?);
     try std.testing.expectEqualStrings("docs", tool.server.?);
     try std.testing.expectEqualStrings("claude", tool.agent);
 
     try std.testing.expectEqual(@as(?Inferise.Tool, null), try Inferise.readTool(arena, null));
     const other = try Meta.of(arena, Inferise.key, .{ .logDir = "/tmp" });
     try std.testing.expectEqual(@as(?Inferise.Tool, null), try Inferise.readTool(arena, other));
+}
+
+test "a proxy's subagent rides in _meta.inferise.subagent beside what the agent said there" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const meta = try Meta.of(arena, Inferise.key, .{ .subagent = "planner", .tool = Inferise.Tool{ .name = "Bash", .agent = "claude" } });
+    const bytes = try std.json.Stringify.valueAlloc(arena, meta, .{ .emit_null_optional_fields = false });
+    const back = try std.json.parseFromSliceLeaky(RawValue, arena, bytes, .{});
+    try std.testing.expectEqualStrings("planner", (try Inferise.readSubagent(arena, back)).?);
+    try std.testing.expectEqualStrings("Bash", (try Inferise.readTool(arena, back)).?.name.?);
+    try std.testing.expectEqual(@as(?[]const u8, null), try Inferise.readSubagent(arena, null));
+    try std.testing.expectError(error.InvalidParams, Inferise.readSubagent(arena, try Meta.of(arena, Inferise.key, .{ .subagent = 7 })));
 }
 
 test "accounts and sign-in are advertised, and their params and answers use camelCase on the wire" {

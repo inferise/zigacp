@@ -59,6 +59,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     acp_mcp.addImport("acp-schema", schema);
+    // For `AcpError`, the one error set that crosses a package boundary.
+    acp_mcp.addImport("acp", acp);
 
     // Disk I/O goes through `zigstorage`. Requested with exactly the options
     // every other consumer passes — target and optimize, nothing else — or the
@@ -78,6 +80,22 @@ pub fn build(b: *std.Build) void {
     zigacp.addImport("acp-mcp", acp_mcp);
     zigacp.addImport("acp-conductor", acp_conductor);
     zigacp.addImport("zigstorage", zigstorage_module);
+
+    // The single-agent terminal UI, on zigtui. Its own module so the protocol
+    // module never imports a UI: a consumer that asks for `zigacp` alone never
+    // compiles zigtui. zigtui is requested with target and optimize only, the
+    // options every other consumer passes, or a harness linking both mints a
+    // second copy.
+    const acp_tui: ?*std.Build.Module = if (b.lazyDependency("zigtui", .{ .target = target, .optimize = optimize })) |zigtui_dep| blk: {
+        const module = b.addModule("acp-tui", .{
+            .root_source_file = b.path("src/tui/module.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        module.addImport("zigacp", zigacp);
+        module.addImport("zigtui", zigtui_dep.module("zigtui"));
+        break :blk module;
+    } else null;
 
     const test_step = b.step("test", "Run unit tests");
 
@@ -123,6 +141,14 @@ pub fn build(b: *std.Build) void {
     });
     test_step.dependOn(&b.addRunArtifact(zigacp_tests).step);
 
+    if (acp_tui) |module| {
+        const acp_tui_tests = b.addTest(.{
+            .name = "acp-tui-tests",
+            .root_module = module,
+        });
+        test_step.dependOn(&b.addRunArtifact(acp_tui_tests).step);
+    }
+
     const cookbook_step = b.step("cookbook", "Build cookbook examples");
 
     const minimal_client_module = b.createModule(.{
@@ -155,11 +181,27 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(minimal_agent_exe);
     cookbook_step.dependOn(&minimal_agent_exe.step);
 
+    // The same client surface a front end uses, through the barrel: a seam, a session, a turn.
+    const session_client_module = b.createModule(.{
+        .root_source_file = b.path("src/acp-cookbook/session_client.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    session_client_module.addImport("zigacp", zigacp);
+    const session_client_exe = b.addExecutable(.{
+        .name = "session-client",
+        .root_module = session_client_module,
+    });
+    b.installArtifact(session_client_exe);
+    cookbook_step.dependOn(&session_client_exe.step);
+
+    const demo_session_run = b.addRunArtifact(session_client_exe);
     const demo_client_run = b.addRunArtifact(minimal_client_exe);
     const demo_agent_run = b.addRunArtifact(minimal_agent_exe);
     demo_agent_run.step.dependOn(&demo_client_run.step);
     const demo_step = b.step("demo", "Run the cookbook client and agent examples");
     demo_step.dependOn(&demo_agent_run.step);
+    demo_step.dependOn(&demo_session_run.step);
 
     const gen_schema_module = b.createModule(.{
         .root_source_file = b.path("tools/gen_schema/main.zig"),
@@ -221,13 +263,11 @@ pub fn build(b: *std.Build) void {
 ///
 /// Stabilized surface carries no flag: `session/close`, `session/resume`,
 /// `logout`, `usage_update`, `$/cancel_request`, `additionalDirectories`,
-/// message ids and boolean config options are always built. `elicitation`
-/// stays flagged because its stable shape (form and URL modes) differs from
-/// the draft modelled here; `session_model` gates `session/set_model`, which
+/// message ids, boolean config options and elicitation (stable since schema
+/// 1.21) are always built. `session_model` gates `session/set_model`, which
 /// ACP dropped for a `model` config option. `auth_methods` and
 /// `llm_providers` gate nothing yet.
 const UnstableFlags = struct {
-    unstable_elicitation: bool,
     unstable_nes: bool,
     unstable_auth_methods: bool,
     unstable_session_fork: bool,

@@ -19,4 +19,18 @@ pub const AcpError = error{
     AgentGone,
     /// Allocator returned OOM.
     OutOfMemory,
+    /// The agent did not advertise what was asked of it (an `_inferise/*` method, images, reopening a session).
+    NotOffered,
+    /// Refused while a turn runs: a setting, a second prompt.
+    TurnInFlight,
+    /// A prompt with nothing in it.
+    EmptyPrompt,
+    /// A prompt with images to an agent that takes none.
+    ImagesNotTaken,
+    /// Asked of a client before it has opened a session.
+    NoSession,
+    /// A code handed to a sign-in that is not waiting for one.
+    NotWaiting,
+    /// Disk or another store refused a read or a write.
+    StorageFailed,
 };
