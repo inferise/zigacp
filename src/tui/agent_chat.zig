@@ -117,8 +117,6 @@ pub const AgentChat = struct {
     const prompt_max_lines: u16 = 8;
     /// Longest notice kept.
     const notice_len = 200;
-    /// Rows moved by a shifted arrow.
-    const scroll_step: isize = 3;
 
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -131,10 +129,8 @@ pub const AgentChat = struct {
 
     /// Whether a session is open; until it is, Enter opens one.
     session_open: bool = false,
-    /// What the agent said, folded from the client's record as it is drawn.
-    conversation: mod.Conversation,
-    /// The record position folded up to.
-    record_next: usize = 0,
+    /// What the agent said, folded from the client's record as it is drawn, and where the view sits.
+    pane: mod.ChatPane,
     /// Whether tool calls show their input and output; `^T` switches it.
     tools_open: bool = false,
 
@@ -167,12 +163,6 @@ pub const AgentChat = struct {
     notice_size: usize = 0,
     notice_problem: bool = false,
 
-    /// Rows of the conversation pane at the last draw.
-    conversation_rows: u16 = 0,
-    conversation_total: usize = 0,
-    following: bool = true,
-    scroll_line: usize = 0,
-    last_top_line: usize = 0,
     /// Set by `^Q` or Quit; the next event ends the app.
     quitting: bool = false,
 
@@ -206,7 +196,7 @@ pub const AgentChat = struct {
             .client = client,
             .title = title,
             .cwd = cwd,
-            .conversation = mod.Conversation.init(allocator),
+            .pane = mod.ChatPane.init(allocator),
             .prompt = prompt,
             .clipboard = clipboard,
             .log_ring = log_ring,
@@ -235,7 +225,7 @@ pub const AgentChat = struct {
         self.log_ring.deinit();
         self.clipboard.deinit();
         self.prompt.deinit();
-        self.conversation.deinit();
+        self.pane.deinit();
     }
 
     /// Takes over the terminal and runs the screen until the person quits.
@@ -378,17 +368,9 @@ pub const AgentChat = struct {
         // The agent is blocked until a permission is answered, so it takes the
         // keyboard — but only `y`, `a` and `n`, and only while it waits.
         if (self.client.isAwaitingPermission()) {
-            if (key.matches('y', .{})) return self.client.answerPermission(.allowOnce);
-            if (key.matches('a', .{})) return self.client.answerPermission(.allowAlways);
-            if (key.matches('n', .{})) return self.client.answerPermission(.rejectOnce);
+            if (mod.ChatPane.permissionAnswer(key)) |answer| return self.client.answerPermission(answer);
         }
-
-        if (key.matches(mod.zigtui.Key.page_up, .{})) return self.scrollBy(-@as(isize, @intCast(@max(self.conversation_rows, 1))));
-        if (key.matches(mod.zigtui.Key.page_down, .{})) return self.scrollBy(@intCast(@max(self.conversation_rows, 1)));
-        if (key.matches(mod.zigtui.Key.up, .{ .shift = true })) return self.scrollBy(-scroll_step);
-        if (key.matches(mod.zigtui.Key.down, .{ .shift = true })) return self.scrollBy(scroll_step);
-        if (key.matches(mod.zigtui.Key.home, .{})) return self.scrollBy(std.math.minInt(isize));
-        if (key.matches(mod.zigtui.Key.end, .{})) return self.follow();
+        if (self.pane.handleScrollKey(key)) return;
 
         // `Esc` and `^C` cancel a running turn; otherwise they are the prompt's.
         if (key.matches(mod.zigtui.Key.escape, .{}) or key.matches('c', .{ .ctrl = true })) {
@@ -434,7 +416,7 @@ pub const AgentChat = struct {
             return;
         };
         try self.prompt.open("", "");
-        self.follow();
+        self.pane.follow();
     }
 
     // -------------------------------------------------------------------------
@@ -762,31 +744,6 @@ pub const AgentChat = struct {
     }
 
     // -------------------------------------------------------------------------
-    // Scrolling
-
-    fn scrollBy(self: *Self, delta: isize) void {
-        const from = if (self.following) self.last_top_line else self.scroll_line;
-        const total = self.conversation_total -| self.conversation_rows + 1;
-        if (self.following and delta >= 0) return self.follow();
-        const signed_from: isize = @intCast(@min(from, std.math.maxInt(isize)));
-        const moved = signed_from +| delta;
-        if (moved <= 0) {
-            self.following = false;
-            self.scroll_line = 0;
-            return;
-        }
-        const target: usize = @intCast(moved);
-        if (target + 1 >= total) return self.follow();
-        self.following = false;
-        self.scroll_line = target;
-    }
-
-    fn follow(self: *Self) void {
-        self.following = true;
-        self.scroll_line = 0;
-    }
-
-    // -------------------------------------------------------------------------
     // Drawing
 
     /// Brings the conversation up to date with the client's record.
@@ -797,24 +754,7 @@ pub const AgentChat = struct {
     ///
     /// Return: nothing; propagates allocation failure.
     pub fn fold(self: *Self, arena: std.mem.Allocator) std.mem.Allocator.Error!void {
-        const page = self.client.recordSince(arena, self.record_next) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            else => return,
-        };
-        if (page.restarted) self.conversation.clear();
-        for (page.entries) |entry| {
-            // The client's own lines ride in the record as `{"note":…}`.
-            if (std.mem.startsWith(u8, entry, "{\"note\":")) {
-                const note = std.json.parseFromSliceLeaky(struct { note: []const u8 }, arena, entry, .{}) catch continue;
-                try self.conversation.addNote(note.note);
-                continue;
-            }
-            self.conversation.applyJson(entry) catch |err| switch (err) {
-                error.OutOfMemory => return error.OutOfMemory,
-                else => log.debug("an update not drawn [{t}]", .{err}),
-            };
-        }
-        self.record_next = page.next;
+        try self.pane.foldClient(arena, self.client);
     }
 
     fn typeErasedDrawFn(ptr: *anyopaque, ctx: mod.zigtui.DrawContext) std.mem.Allocator.Error!mod.zigtui.Surface {
@@ -828,7 +768,7 @@ pub const AgentChat = struct {
 
         // The head: the agent, its model and its mode.
         try kids.append(ctx.arena, .{ .origin = .{ .row = 0, .col = 0 }, .surface = try self.drawLine(ctx, max.width, try self.headSpans(ctx.arena)) });
-        try kids.append(ctx.arena, .{ .origin = .{ .row = 1, .col = 0 }, .surface = try self.drawConversation(ctx.withConstraints(talk, .fromSize(talk)), talk) });
+        try kids.append(ctx.arena, .{ .origin = .{ .row = 1, .col = 0 }, .surface = try self.drawConversation(ctx.withConstraints(talk, .fromSize(talk))) });
 
         self.prompt.label = if (self.sign_in != null) "Code" else if (self.session_open) "Ask" else "Enter opens the session";
         self.prompt.name = self.title;
@@ -880,32 +820,15 @@ pub const AgentChat = struct {
         return lines + prompt_chrome_rows;
     }
 
-    fn drawConversation(self: *Self, ctx: mod.zigtui.DrawContext, size: mod.zigtui.Size) std.mem.Allocator.Error!mod.zigtui.Surface {
-        self.conversation_rows = size.height;
+    fn drawConversation(self: *Self, ctx: mod.zigtui.DrawContext) std.mem.Allocator.Error!mod.zigtui.Surface {
         try self.fold(ctx.arena);
-
-        const view = mod.ConversationView{ .conversation = &self.conversation, .agent = self.title, .expanded = self.tools_open };
-        var entries: std.ArrayList(mod.zigtui.TranscriptEntry) = .empty;
-        try entries.appendSlice(ctx.arena, try view.entries(ctx.arena));
-        if (self.client.isWorking()) try entries.append(ctx.arena, .{ .text = "working… (esc cancels)", .role = .warningText });
-        const rows: []const []const mod.zigtui.TextSpan = if (entries.items.len == 0)
-            try ctx.arena.dupe([]const mod.zigtui.TextSpan, &.{try ctx.arena.dupe(mod.zigtui.TextSpan, &.{.{
-                .text = if (self.session_open) "  nothing yet — send a prompt" else "  opening a session…",
-                .style = mod.zigtui.Theme.secondaryText.style(),
-            }})})
-        else
-            try (mod.zigtui.TranscriptView{ .entries = entries.items }).lines(ctx.arena, size.width);
-
-        self.conversation_total = rows.len;
-        const top = if (self.following) rows.len -| size.height else @min(self.scroll_line, rows.len -| 1);
-        self.last_top_line = top;
-        const shown = rows[top..@min(rows.len, top + size.height)];
-
-        const children = try ctx.arena.alloc(mod.zigtui.SubSurface, shown.len);
-        for (shown, 0..) |spans, r| {
-            children[r] = .{ .origin = .{ .row = @intCast(r), .col = 0 }, .surface = try self.drawLine(ctx, size.width, spans) };
-        }
-        return .{ .size = size, .widget = self.widget(), .buffer = &.{}, .children = children };
+        return self.pane.draw(ctx, .{
+            .owner = self.widget(),
+            .agent = self.title,
+            .expanded = self.tools_open,
+            .working = self.client.isWorking(),
+            .empty = if (self.session_open) "  nothing yet — send a prompt" else "  opening a session…",
+        });
     }
 
     /// The head line: the agent, and the model and mode the session reported.
@@ -952,8 +875,7 @@ pub const AgentChat = struct {
         if (self.client.isAwaitingPermission()) {
             const summary = self.client.permissionSummary(arena) catch null;
             const question = try std.fmt.allocPrint(arena, "Allow {s}?  ", .{(summary orelse null) orelse "this tool"});
-            const hints = [_]mod.zigtui.KeyHint{ .{ .key = "y", .action = "yes" }, .{ .key = "a", .action = "always" }, .{ .key = "n", .action = "no" } };
-            return lead(arena, question, try (mod.zigtui.StatusLine{ .hints = &hints }).spans(arena));
+            return lead(arena, question, try (mod.zigtui.StatusLine{ .hints = &mod.ChatPane.permission_hints }).spans(arena));
         }
 
         if (self.sign_in) |running| {
@@ -981,7 +903,7 @@ pub const AgentChat = struct {
             .{ .key = "^Q", .action = "quit" },
         };
         const keys = try (mod.zigtui.StatusLine{ .mode = self.title, .hints = &hints }).spans(arena);
-        if (self.following) return keys;
+        if (self.pane.following) return keys;
         const scrolled = try arena.alloc(mod.zigtui.TextSpan, keys.len + 1);
         @memcpy(scrolled[0..keys.len], keys);
         scrolled[keys.len] = .{ .text = "  ⇡ scrolled (End follows)", .style = mod.zigtui.Theme.warningText.style() };
@@ -1057,7 +979,7 @@ test "the screen opens a session, sends a prompt and folds the reply, with no te
     try chat.submit();
     try untilIdle(io, seam.client);
     try chat.fold(arena);
-    const view = mod.ConversationView{ .conversation = &chat.conversation, .agent = "Echo" };
+    const view = mod.ConversationView{ .conversation = &chat.pane.conversation, .agent = "Echo" };
     const entries = try view.entries(arena);
     var found = false;
     for (entries) |entry| {

@@ -3,8 +3,8 @@
 //! zigacp's protocol module never imports a UI; this module does, and only a
 //! consumer that asks for `acp-tui` compiles `zigtui` and `zigvaxis`. It holds
 //! what draws an ACP conversation — `Conversation` folds an agent's
-//! `session/update`s, `ConversationView` draws them — and the single-agent
-//! screen built from them.
+//! `session/update`s, `ConversationView` draws them, `ChatPane` scrolls one
+//! for a screen — and the single-agent screen built from them.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -29,6 +29,10 @@ pub const ConversationView = @import("conversation_view.zig").ConversationView;
 // -----------------------------------------------------------------------------
 // The screen
 
+/// One agent's conversation as a pane: folded from its client's record, scrolled, drawn.
+pub const ChatPane = @import("chat_pane.zig").ChatPane;
+/// Where a pane's scroll lands.
+pub const ScrollTarget = @import("chat_pane.zig").ScrollTarget;
 /// The terminal screen for one ACP agent: conversation, prompt, and what the agent advertised.
 pub const AgentChat = @import("agent_chat.zig").AgentChat;
 /// What a harness executable does once its own flags are handled: the screen, or ACP on stdio.

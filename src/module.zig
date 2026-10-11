@@ -172,6 +172,16 @@ pub const Relay = struct {
     pub const Downstream = @import("relay_downstream.zig").RelayDownstream;
     /// A child ACP agent to spawn: its command line and environment.
     pub const ChildCommand = @import("relay_downstream.zig").ChildCommand;
+    /// A multiplexing proxy's plumbing: one host, any number of agents (routes), ids and sessions rewritten both ways.
+    pub const Router = @import("relay_router.zig").RelayRouter;
+    /// One agent behind a `Router`.
+    pub const RouterRoute = @import("relay_router.zig").RouterRoute;
+    /// One of a router owner's own requests to a route.
+    pub const RouterWaiter = @import("relay_router.zig").RouterWaiter;
+    /// The owner's say over each frame a route sends the host.
+    pub const RouterHooks = @import("relay_router.zig").RouterHooks;
+    /// Whether a route's frame goes on to the host or stops with the owner.
+    pub const RouterDisposition = @import("relay_router.zig").RouterDisposition;
 };
 
 // -----------------------------------------------------------------------------

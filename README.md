@@ -24,13 +24,13 @@ This repository is a native **Zig** implementation. It gives you allocator-aware
 **Client, relay and analytics** (on the barrel)
 
 - `Client.Session` — one agent's ACP session as a front end drives it: handshake, new / load / close, prompts (with images), permissions, settings (`Client.Settings`), status, extensions, accounts, the conversation record; finished turns go to the caller's `Client.History`. `Client.SignIn` runs `_inferise/sign_in` on its own task, polled. `Client.Seam(Agent)` stands an agent up in-process with a connected session, torn down in order.
-- `Relay.Proxy` — every frame between a host and an agent: the session record (`Relay.SessionLog`), turn numbers, one usage shape (`Relay.UsageNormalizer`), instructions, and the MCP way back to the host as ACP's own `notice` and `elicitation/create`. `Relay.Downstream(Agent)` is its agent end: linked in-process, or a child on stdio.
+- `Relay.Proxy` — every frame between a host and an agent: the session record (`Relay.SessionLog`), turn numbers, one usage shape (`Relay.UsageNormalizer`), instructions, and the MCP way back to the host as ACP's own `notice` and `elicitation/create`. `Relay.Downstream(Agent)` is its agent end: linked in-process, or a child on stdio. `Relay.Router` is a multiplexing proxy's plumbing: one host, one `RouterRoute` per agent behind it, session and request ids rewritten both ways, every frame tagged `_meta.inferise.subagent`; its owner decides where a prompt goes and sees each frame first (`RouterHooks`).
 - `Analytics` — `TapTransport` reports every frame to an `Observer`; `Recorder` decodes them (`EventDecoder`) off the protocol path into JSON records for its sinks (`JsonlSink`, `MemorySink`), content cut and redacted (`ContentRedactor`); agents are named by `AgentIdentity`.
 - `Test.EchoAgent` — a scripted in-process agent for a client's tests and demos.
 
 **Terminal UI**
 
-- [`acp-tui`](./src/tui/) — A separate module on `zigtui`, so the protocol module takes no UI: `Conversation` and `ConversationView` (an agent's `session/update`s as who said what), `AgentChat` (the single-agent screen: conversation, prompt, permissions, and a menu of what the agent advertised — models, modes, options, status, extensions, accounts, sign-in), and `AgentMain(Agent)` with its `Launch` rule, the `main` every harness executable shares: `app` in a terminal is the screen, `app acp` or a launch on pipes serves ACP on stdio.
+- [`acp-tui`](./src/tui/) — A separate module on `zigtui`, so the protocol module takes no UI: `Conversation` and `ConversationView` (an agent's `session/update`s as who said what), `ChatPane` (one conversation folded from a client's record, scrolled and drawn — what a screen of several agents keeps one of per agent), `AgentChat` (the single-agent screen: a `ChatPane`, prompt, permissions, and a menu of what the agent advertised — models, modes, options, status, extensions, accounts, sign-in), and `AgentMain(Agent)` with its `Launch` rule, the `main` every harness executable shares: `app` in a terminal is the screen, `app acp` or a launch on pipes serves ACP on stdio.
 
 **Proxy orchestration**
 
@@ -142,7 +142,7 @@ zigacp owns the ACP seam: the wire, the `_inferise` extension below, and every p
           │ in-process                          │ stdio (`zagent acp`)
           ▼                                     ▼
  ┌──────────────────────────── zigagent ───────────────────────────┐
- │  front ends ── Client.Session ──┐          MetaAgent            │
+ │  front ends ── Client.Session ──┐   MetaAgent on Relay.Router   │
  │                                 │          routes host sessions │
  │                   Relay.Proxy per subagent ◄────────────────────┘
  │                   Analytics.TapTransport → Recorder              │
@@ -180,7 +180,7 @@ zigacp owns the ACP seam: the wire, the `_inferise` extension below, and every p
 - A multiplexing proxy rewrites session ids and request ids both ways and tags every forwarded update `_meta.inferise.subagent`.
 - Forward what does not parse, as it came.
 
-`Relay.Proxy` does all of this but the multiplexing, which is `zigagent`'s `MetaAgent`.
+`Relay.Proxy` does all of this for one agent; `Relay.Router` does the multiplexing, under an owner that decides where each prompt goes (`zigagent`'s `MetaAgent`).
 
 ## The `_inferise` extension
 
@@ -256,10 +256,10 @@ src/
 ├── vt_screen.zig            # Pty.VtScreen
 ├── client_*.zig             # Client.Session, Settings, History, SignIn, Seam(Agent)
 ├── analytics_*.zig          # Analytics.Observer, TapTransport, EventDecoder, Recorder, sinks
-├── relay_*.zig              # Relay.Proxy, Downstream(Agent), SessionLog, UsageNormalizer
+├── relay_*.zig              # Relay.Proxy, Downstream(Agent), Router, SessionLog, UsageNormalizer
 ├── mcp_offer.zig            # McpOffer
 ├── test_echo_agent.zig      # Test.EchoAgent
-├── tui/                     # acp-tui: Conversation, ConversationView, AgentChat, AgentMain
+├── tui/                     # acp-tui: Conversation, ConversationView, ChatPane, AgentChat, AgentMain
 ├── acp-schema/              # wire types + JSON codec
 ├── acp/                     # core SDK
 │   ├── raw_peer.zig         # RawPeer / RawMessage
