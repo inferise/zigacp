@@ -17,6 +17,8 @@ pub const AcpError = error{
     SessionNotFound,
     /// The agent behind the session has exited, so nothing can be asked of it until it is started again.
     AgentGone,
+    /// The agent will not open a session until it is signed in to; the host answers with `authenticate`.
+    AuthRequired,
     /// Allocator returned OOM.
     OutOfMemory,
 };

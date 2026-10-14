@@ -83,9 +83,14 @@ pub const Agent = struct {
     pub const method_session_update = schema.agent.method_session_update;
     pub const method_session_set_mode = schema.agent.method_session_set_mode;
     pub const method_session_set_config_option = schema.agent.method_session_set_config_option;
+    pub const method_authenticate = schema.agent.method_authenticate;
 
     pub const InitializeRequest = schema.agent.InitializeRequest;
     pub const InitializeResponse = schema.agent.InitializeResponse;
+    pub const AgentCapabilities = schema.agent.AgentCapabilities;
+    pub const AuthMethod = schema.agent.AuthMethod;
+    pub const AuthenticateRequest = schema.agent.AuthenticateRequest;
+    pub const AuthenticateResponse = schema.agent.AuthenticateResponse;
     pub const NewSessionRequest = schema.agent.NewSessionRequest;
     pub const NewSessionResponse = schema.agent.NewSessionResponse;
     pub const LoadSessionRequest = schema.agent.LoadSessionRequest;

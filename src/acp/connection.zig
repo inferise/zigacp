@@ -223,6 +223,7 @@ pub const Connection = struct {
             error.InvalidParams => .{ .code = schema.@"error".invalid_params, .message = "invalid params" },
             error.SessionNotFound => .{ .code = schema.@"error".session_not_found, .message = "session not found" },
             error.AgentGone => .{ .code = schema.@"error".agent_gone, .message = "the agent is not running" },
+            error.AuthRequired => .{ .code = schema.@"error".auth_required, .message = "Sign in to continue." },
             error.InvalidMessage,
             error.PeerError,
             error.TransportClosed,
@@ -357,4 +358,6 @@ test "a handler's failure is answered with its own code and a message that says 
     try std.testing.expectEqualStrings("the agent is not running", Connection.errorReply(error.AgentGone).message);
     try std.testing.expectEqual(@as(i32, -32002), Connection.errorReply(error.SessionNotFound).code);
     try std.testing.expectEqual(@as(i32, -32603), Connection.errorReply(error.OutOfMemory).code);
+    try std.testing.expectEqual(@as(i32, -32000), Connection.errorReply(error.AuthRequired).code);
+    try std.testing.expectEqualStrings("Sign in to continue.", Connection.errorReply(error.AuthRequired).message);
 }
