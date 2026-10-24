@@ -1,7 +1,7 @@
 .{
     .name = .zigacp,
     .description = "Zig ACP Client-Agent Module",
-    .version = "3.0.2",
+    .version = "3.0.3",
     .fingerprint = 0x7e68bdcdb9528453,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
@@ -19,8 +19,8 @@
             .lazy = true,
         },
         .zigbuildx = .{
-            .url = "git+https://github.com/mlavergn/zigbuildx#main",
-            .hash = "zigbuildx-3.2.0-9koPhAfUAwC2g9G5m6ArB2K3m9fp_2nVc4VSmXFbgrJQ",
+            .url = "git+https://github.com/mlavergn/zigbuildx?ref=v3.6.0#fba04ba852fc06317207bdc7119b58dc13638ac0",
+            .hash = "zigbuildx-3.6.0-9koPhO6cBAA86_jmOLvms1OJMS50hGL4g_b9EsLZbqBX",
         },
     },
     .paths = .{
