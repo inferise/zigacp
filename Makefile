@@ -6,6 +6,12 @@
 #
 ###############################################
 
+# Optional include to extend the makefile targets
+-include ../styleguide/Makefile.in
+
+# The Zig sources, tools/ included.
+ZIG_DIRS := src tools
+
 .DEFAULT_GOAL := all
 
 .PHONY: build dist run
@@ -25,9 +31,8 @@ VERSION := $(shell sed -n -E 's/^[[:space:]]*\.version[[:space:]]*=[[:space:]]*"
 all: build format test
 	@echo "done"
 
-# Full pre-commit gate: clean, format, lint, build, then test.
-validate: clean format lint build windows test
-	@echo "validate done"
+# Extend the canonical pre-commit gate with the Windows build.
+validate: windows
 
 # ---------------------------------------------
 # Build
@@ -72,21 +77,6 @@ targets:
 # Run the unit test suite.
 test:
 	zig build test --summary all
-
-# ---------------------------------------------
-# Format & lint
-# ---------------------------------------------
-
-# Format the Zig sources. Matches what CI checks with `zig fmt --check`.
-format:
-	zig fmt build*.zig src/ tools/
-
-# Lint the Zig sources this repo owns. Both tools walk the working directory
-# by default, which drags in the vendored dependency cache under zig-pkg/ and
-# buries our findings in third-party noise — so feed them an explicit list.
-lint:
-	find build*.zig src tools -name '*.zig' | xargs zlintpre
-	find build*.zig src tools -name '*.zig' | zlint -c styleguide -S
 
 # ---------------------------------------------
 # Documentation

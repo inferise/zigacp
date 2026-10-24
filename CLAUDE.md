@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Native Zig implementation of the **Agent Client Protocol** (ACP) — JSON-RPC 2.0 over a newline-delimited transport, spoken between code editors and coding agents. Ships wire types, a synchronous SDK, the client session, relay and analytics machinery, proxy orchestration, a single-agent terminal screen (`acp-tui`), a reference agent, and a schema generator. See `README.md` for the public API surface.
 
-Zig **0.17.0** exactly (`.minimum_zig_version` in `build.zig.zon`); CI pins it on ubuntu + macOS. The codebase uses 0.17-era APIs (`std.Io`, `b.addTest(.{ .root_module = ... })`, `@typeInfo(T).@"struct".field_names`) — read `styleguide/ZIGMIGRATE.md` before porting anything that looks pre-0.17.
+Zig **0.17.0** exactly (`.minimum_zig_version` in `build.zig.zon`); CI pins it on ubuntu + macOS. The codebase uses 0.17-era APIs (`std.Io`, `b.addTest(.{ .root_module = ... })`, `@typeInfo(T).@"struct".field_names`) — read `../styleguide/ZIGMIGRATE.md` before porting anything that looks pre-0.17.
 
 **Never run git commands unless explicitly asked.** No commits, branches, tags, pushes, or `make tag`.
 
 ## Build / Test
 
-`make` is the entry point; `make validate` (clean → format → lint → build → test) is the pre-commit gate.
+`make` is the entry point; `make validate` (clean → format → lint → build → test → Windows cross-build) is the pre-commit gate.
 
 ```sh
 make build                                 # zig build
@@ -26,7 +26,7 @@ zig build gen-schema -- /tmp/schema.json   # schema catalog (omit arg for stdout
 
 Run one test file directly: `zig test src/acp/connection.zig` won't resolve imports — use `zig build test --summary all` and read the per-module breakdown, or temporarily narrow the `test` block.
 
-`make lint` runs `zlintpre` then `zlint -c styleguide` (config: `styleguide/zlint.json`), each scoped to `build.zig src/ tools/`. Both tools are installed org-wide under `/usr/local/inferise/`, not vendored here.
+`make format` runs `zig fmt` over `build.zig`, `src/`, `tools/` and `build.zig.zon`. `make lint` runs `zlintpre` then `zlint -c ../styleguide -S --deny-warnings` (config: `../styleguide/zlint.json`), each scoped to `build.zig src/ tools/` (`ZIG_DIRS`); warnings and findings fail. `format`, `lint` and `validate` come from `../styleguide/Makefile.in`; the project adds the Windows build with `validate: windows`.
 
 ## Module layout
 
@@ -46,7 +46,7 @@ Strictly layered; each package is `src/<name>/` with a `module.zig` barrel.
 - `src/yopo/main.zig` — reference agent; the executable contract spec.
 - `tools/gen_schema/` — comptime-reflective schema catalog emitter.
 
-Do not hand-edit: `zig-pkg/`, `.zig-cache/`, `zig-out/` (all generated, all gitignored). `styleguide/` is a git submodule — change it in `inferise/styleguide`, never in place.
+Do not hand-edit: `zig-pkg/`, `.zig-cache/`, `zig-out/` (all generated, all gitignored). `../styleguide` is the shared sibling checkout of `inferise/styleguide` (its own repo) — never edit it from this repo.
 
 ## Architecture conventions
 
@@ -56,7 +56,7 @@ Do not hand-edit: `zig-pkg/`, `.zig-cache/`, `zig-out/` (all generated, all giti
 - `Connection.init` **borrows** its transport — the caller closes it.
 - Tracing never blocks the protocol path: trace failures become `log.warn`, not returned errors.
 - Protocol surface ACP has not stabilized is compile-gated behind its own `-Dunstable_*` flag (5 of them in `build.zig`'s `UnstableFlags`), default off, read via `@import("build_options")`. Gated tests self-skip with `return error.SkipZigTest`. Adding an unstable method means adding a flag, not exposing it unconditionally; once ACP stabilizes it (check `schema/v1/schema.json` in agent-client-protocol), the flag goes and it is always built. The exception: where ACP's unstable surface replaces an `acp.Inferise` item, zigacp uses it with no flag and that surface's flag goes (see "Decided against the ACP schema"). Consumers request zigacp with no flags.
-- `@styleguide/ZIGSTYLE.md` is the authoritative Zig style guide — read it before writing Zig. Highlights: no namespace shorteners (`const mem = std.mem;` is banned, `const Self = @This();` is the only alias), enum variants are camelCase, every file declares a scoped logger, tests live at the file bottom after a `// ---` divider, prefer `std.Io` over `std.posix`.
+- `@../styleguide/ZIGSTYLE.md` is the authoritative Zig style guide — read it before writing Zig. Highlights: no namespace shorteners (`const mem = std.mem;` is banned, `const Self = @This();` is the only alias), enum variants are camelCase, every file declares a scoped logger, tests live at the file bottom after a `// ---` divider, prefer `std.Io` over `std.posix`.
 
 ## The ACP seam
 
@@ -103,8 +103,8 @@ Each of these cost a debugging session.
 
 - **Older files still diverge from `ZIGSTYLE.md`; new and touched code must not.** Barrels are now `module.zig` everywhere (B.1.a). Many older files still import siblings directly and alias them (`const Plan = @import("plan.zig").Plan;`, against B.4.a/B.4.b), and some hold several primary types (`src/acp-schema/agent.zig`, `client.zig`, against B.2.a). Code you add or a type you change goes through `const mod = @import("module.zig");`, one primary struct per file named for it.
 - **Wire field names vs C.2.** ZIGSTYLE wants snake_case fields; ACP's JSON is camelCase. New and changed wire structs use snake_case fields and route their `jsonStringify`/`jsonParse`/`jsonParseFromValue` through `acp-schema`'s `WireCase`, which maps `config_id` ↔ `configId`. Older structs still use camelCase field names directly. `SessionUpdate` variants are camelCase in Zig (`.agentMessageChunk`) and keep their snake_case wire tags.
-- **`make lint` is clean (0 findings) — keep it that way.** It runs two tools with different output formats, so read both: `zlint` prints boxed diagnostics, `zlintpre` prints bare `file:line:col:` lines. Left to themselves both walk the whole working directory and pull in ~276 findings from the vendored `zig-pkg/` cache, so the target feeds each an explicit file list instead. Never lint or edit `zig-pkg/` — it is a regenerable dependency cache and any edit is lost on the next fetch. Neither tool exits non-zero on warnings, so `make validate` passing is not by itself proof lint is clean; read the counts.
-- `zlintpre`'s one check is "trailing comma in fn params": a trailing comma makes `zig fmt` keep a parameter list split across lines, and the tool wants it collapsed onto one line. Signatures here therefore run long (up to ~162 chars) — that is intended, and `line-length` is disabled in `styleguide/zlint.json` to match. Don't re-wrap them.
+- **`make lint` is clean (0 findings) — keep it that way.** It runs two tools with different output formats, so read both: `zlint` prints boxed diagnostics, `zlintpre` prints bare `file:line:col:` lines. Left to themselves both walk the whole working directory and pull in ~276 findings from the vendored `zig-pkg/` cache, so the target feeds each an explicit file list instead. Never lint or edit `zig-pkg/` — it is a regenerable dependency cache and any edit is lost on the next fetch. `make lint` fails on any finding from either (it checks `zlintpre`'s summary line and runs `zlint` with `--deny-warnings`).
+- `zlintpre`'s one check is "trailing comma in fn params": a trailing comma makes `zig fmt` keep a parameter list split across lines, and the tool wants it collapsed onto one line. Signatures here therefore run long (up to ~162 chars) — that is intended, and `line-length` is disabled in `../styleguide/zlint.json` to match. Don't re-wrap them.
 - **Two path dependencies: `../zigstorage`, and `../zigtui` (lazy).** `build.zig` uses `b.dependency(...)` on zigstorage and `b.lazyDependency(...)` on zigtui — no pinned remote, no fallback. Both sibling checkouts must exist (locally and in CI), or the build fails; zigtui brings `../zigvaxis`. zigtui is lazy and ungated: fetched with the package, compiled only by a consumer of `acp-tui`. Stock Zig ignores the `.clone` fields in `build.zig.zon`; `zigbuildx.Deps.cloneMissing` reads them, clones a missing sibling, and exits asking for a re-run.
 - **One build-only dependency: `zigbuildx`**, pinned by `.url` + `.hash`, never `.path` — it holds the code that clones missing siblings, so it cannot itself be one. Imported from `build.zig` only, never from `src/`. Moving it to a newer version is `zig fetch --save` and nothing else.
 - `zigstorage` is requested with target and optimize only — the options every other consumer passes, or a harness linking both mints a second copy. The `zigacp` barrel imports it (`src/client_fs.zig`), as does `gen-schema`.
