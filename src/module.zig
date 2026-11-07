@@ -39,6 +39,9 @@ pub const Dispatcher = acp.Dispatcher;
 pub const RequestHandler = acp.RequestHandler;
 pub const NotificationHandler = acp.NotificationHandler;
 pub const AcpError = acp.AcpError;
+/// The ring of recent frames a `Connection` records once given one; zagent's MCP reads keep the last frame so a
+/// refusal's own words survive `error.PeerError`.
+pub const TraceBuffer = acp.TraceBuffer;
 
 // -----------------------------------------------------------------------------
 // Transports (acp, acp-async)
